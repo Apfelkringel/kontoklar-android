@@ -10,6 +10,7 @@ Native Android app prototype built with Kotlin and Jetpack Compose. The app uses
 - Local business profile settings for sender identity/address, optional tax identifiers, invoice prefix, payment term, and a stored VAT rate. The prefix and payment term are applied to newly created invoice drafts; VAT is not calculated or printed as a legal invoice tax breakdown.
 - Manually record expenses with merchant, amount, category, date, and note.
 - Attach a local image or PDF receipt to an expense.
+- Capture receipt photos through Android's camera app and use bundled, on-device ML Kit OCR to suggest merchant, date, and total. Suggestions remain editable and require user review.
 - Persist those records locally with Android SharedPreferences.
 - German and dot-decimal Euro input parsing, with unit tests.
 - Navigation for invoices, expenses, tax overview, and account/settings areas.
@@ -19,11 +20,11 @@ Native Android app prototype built with Kotlin and Jetpack Compose. The app uses
 
 ## Not implemented yet
 
-There is no account/login or cloud sync, bank/PSD2 connection, actual automatic transfer of tax reserves, receipt OCR/camera capture, legally complete invoice export or e-invoice transmission, tax calculation or submission, notifications, or accountant collaboration. Invoice PDFs are clearly marked as incomplete drafts and must not be used as tax documents. The tax screen is informational and does not submit declarations or provide binding calculations.
+There is no account/login or cloud sync, bank/PSD2 connection, actual automatic transfer of tax reserves, legally complete invoice export or e-invoice transmission, tax calculation or submission, notifications, or accountant collaboration. OCR is local and heuristic; it is not guaranteed to read receipts correctly and always requires user review. Invoice PDFs are clearly marked as incomplete drafts and must not be used as tax documents. The tax screen is informational and does not submit declarations or provide binding calculations.
 
 ## Publishing an update
 
-Push a version tag such as `v0.3.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
+Push a version tag such as `v0.5.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
 
 ## Build
 

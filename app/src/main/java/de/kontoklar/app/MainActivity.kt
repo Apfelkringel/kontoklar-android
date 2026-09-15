@@ -32,6 +32,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
+import java.io.File
 import java.time.LocalDate
 
 private val Ink = Color(0xFF172823)
@@ -425,6 +427,9 @@ private fun ActionDialog(
     var error by remember { mutableStateOf<String?>(null) }
     var categoryExpanded by remember { mutableStateOf(false) }
     var receiptUri by remember { mutableStateOf<String?>(null) }
+    var expenseDate by remember { mutableStateOf(LocalDate.now().toString()) }
+    var scanStatus by remember { mutableStateOf<String?>(null) }
+    var cameraOutputUri by remember { mutableStateOf<Uri?>(null) }
     var businessName by remember { mutableStateOf(profile.businessName) }
     var street by remember { mutableStateOf(profile.street) }
     var postalCode by remember { mutableStateOf(profile.postalCode) }
@@ -443,6 +448,24 @@ private fun ActionDialog(
             runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             receiptUri = uri.toString()
         }
+    }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { captured ->
+        val imageUri = cameraOutputUri
+        if (captured && imageUri != null) {
+            receiptUri = imageUri.toString()
+            scanStatus = "Beleg wird lokal ausgelesen …"
+            scanReceipt(context, imageUri,
+                onResult = { result ->
+                    result.merchant?.let { merchant = it }
+                    result.date?.let { expenseDate = it }
+                    result.amountCents?.let { amount = formatEuro(it) }
+                    scanStatus = if (result.merchant == null && result.date == null && result.amountCents == null)
+                        "Kein sicherer Vorschlag erkannt. Bitte Angaben manuell ergänzen."
+                    else "Vorschläge übernommen – bitte vor dem Speichern prüfen."
+                },
+                onError = { scanStatus = "Texterkennung fehlgeschlagen: $it. Du kannst die Angaben manuell erfassen." }
+            )
+        } else if (!captured) scanStatus = "Aufnahme abgebrochen."
     }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -473,6 +496,7 @@ private fun ActionDialog(
                 } else if (isExpense) {
                     OutlinedTextField(merchant, { merchant = it; error = null }, label = { Text("Händler / Lieferant") }, singleLine = true)
                     OutlinedTextField(amount, { amount = it; error = null }, label = { Text("Betrag (€)") }, singleLine = true)
+                    OutlinedTextField(expenseDate, { expenseDate = it; error = null }, label = { Text("Datum (JJJJ-MM-TT)") }, singleLine = true)
                     Box {
                         OutlinedButton(onClick = { categoryExpanded = true }, modifier = Modifier.fillMaxWidth()) { Text("Kategorie: $category", modifier = Modifier.weight(1f)); Icon(Icons.Default.ArrowDropDown, null) }
                         DropdownMenu(expanded = categoryExpanded, onDismissRequest = { categoryExpanded = false }) {
@@ -485,7 +509,19 @@ private fun ActionDialog(
                     OutlinedButton(onClick = { documentPicker.launch(arrayOf("image/*", "application/pdf")) }, modifier = Modifier.fillMaxWidth()) {
                         Icon(if (receiptUri == null) Icons.Default.AttachFile else Icons.Default.CheckCircle, null); Spacer(Modifier.width(8.dp)); Text(if (receiptUri == null) "Foto oder PDF-Beleg anhängen" else "Beleg angehängt · ändern")
                     }
-                    Text("Der Beleg wird lokal verknüpft. OCR-Auslesen und Bankabgleich sind noch nicht aktiv.", color = Muted, fontSize = 11.sp)
+                    OutlinedButton(onClick = {
+                        runCatching {
+                            val directory = File(context.filesDir, "receipts").apply { mkdirs() }
+                            val imageFile = File(directory, "receipt-${System.currentTimeMillis()}.jpg")
+                            val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", imageFile)
+                            cameraOutputUri = uri
+                            cameraLauncher.launch(uri)
+                        }.onFailure { scanStatus = "Kamera konnte nicht gestartet werden: ${it.localizedMessage}" }
+                    }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.DocumentScanner, null); Spacer(Modifier.width(8.dp)); Text("Fotografieren & Text auslesen")
+                    }
+                    scanStatus?.let { Text(it, color = if (it.startsWith("Texterkennung fehlgeschlagen")) MaterialTheme.colorScheme.error else Muted, fontSize = 11.sp) }
+                    Text("Texterkennung läuft auf dem Gerät. Händler, Datum und Betrag sind Vorschläge und müssen geprüft werden.", color = Muted, fontSize = 11.sp)
                 } else {
                     Text("Diese Funktion benötigt noch eine externe Anbieteranbindung. Deine Daten werden bis dahin nicht an Dritte gesendet.", color = Muted, fontSize = 13.sp)
                     OutlinedTextField(note, { note = it }, label = { Text("Notiz (optional)") }, singleLine = true)
@@ -503,9 +539,10 @@ private fun ActionDialog(
                     isInvoice && customer.isBlank() -> error = "Bitte gib einen Kunden an."
                     isInvoice && description.isBlank() -> error = "Bitte beschreibe die Leistung."
                     isExpense && merchant.isBlank() -> error = "Bitte gib einen Händler an."
+                    isExpense && runCatching { LocalDate.parse(expenseDate) }.isFailure -> error = "Bitte gib ein Datum im Format JJJJ-MM-TT an."
                     cents == null -> error = "Bitte gib einen gültigen positiven Betrag an (z. B. 125,50)."
                     isInvoice -> onCreateInvoice(Invoice(customer = customer.trim(), description = description.trim(), amountCents = cents, dueDate = LocalDate.now().plusDays(profile.paymentTermsDays.toLong()).toString()))
-                    isExpense -> onCreateExpense(Expense(merchant = merchant.trim(), category = category, amountCents = cents, note = note.trim(), receiptUri = receiptUri))
+                    isExpense -> onCreateExpense(Expense(merchant = merchant.trim(), category = category, amountCents = cents, date = expenseDate, note = note.trim(), receiptUri = receiptUri))
                     else -> onSave("$title geöffnet")
                 }
         }) { Text(if (isProfile) "Profil speichern" else if (isInvoice) "Entwurf speichern" else if (isExpense) "Ausgabe speichern" else "Weiter", color = Forest) }

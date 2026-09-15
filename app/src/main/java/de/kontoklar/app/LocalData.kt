@@ -108,3 +108,38 @@ fun formatEuro(cents: Long): String {
     val remainder = kotlin.math.abs(cents % 100)
     return "${String.format(java.util.Locale.GERMANY, "%,d", euros)},${String.format(java.util.Locale.GERMANY, "%02d", remainder)} €"
 }
+
+data class ReceiptScan(
+    val merchant: String?,
+    val date: String?,
+    val amountCents: Long?,
+    val text: String
+)
+
+fun parseReceiptText(text: String): ReceiptScan {
+    val lines = text.lines().map(String::trim).filter(String::isNotBlank)
+    val dateRegex = Regex("\\b([0-3]?\\d)[./-]([01]?\\d)[./-](20\\d{2}|\\d{2})\\b")
+    val date = lines.asSequence().mapNotNull { line ->
+        dateRegex.find(line)?.let { match ->
+            val day = match.groupValues[1].toIntOrNull() ?: return@let null
+            val month = match.groupValues[2].toIntOrNull() ?: return@let null
+            val yearRaw = match.groupValues[3].toIntOrNull() ?: return@let null
+            val year = if (yearRaw < 100) 2000 + yearRaw else yearRaw
+            runCatching { LocalDate.of(year, month, day).toString() }.getOrNull()
+        }
+    }.firstOrNull()
+    val amountRegex = Regex("(?<!\\d)(\\d{1,3}(?:[ .]\\d{3})*(?:[,.]\\d{2})|\\d+[,.]\\d{2})(?!\\d)")
+    val totalHints = Regex("(?i)gesamt|summe|total|brutto|zu zahlen|zahlbetrag|endbetrag|rechnungsbetrag")
+    val candidates = lines.filterNot(dateRegex::containsMatchIn).flatMap { line ->
+        amountRegex.findAll(line).mapNotNull { match -> parseEuroCents(match.value) }
+            .map { cents -> cents to totalHints.containsMatchIn(line) }.toList()
+    }
+    val amount = candidates.filter { it.second }.maxOfOrNull { it.first }
+        ?: candidates.maxOfOrNull { it.first }
+    val merchant = lines.firstOrNull { line ->
+        line.any(Char::isLetter) && line.count(Char::isLetter) >= 3 &&
+            !dateRegex.containsMatchIn(line) && !totalHints.containsMatchIn(line) &&
+            !Regex("(?i)rechnung|kassenbon|quittung|beleg|datum|uhrzeit|tel\\.?|www\\.|http").containsMatchIn(line)
+    }?.take(80)
+    return ReceiptScan(merchant, date, amount, text)
+}

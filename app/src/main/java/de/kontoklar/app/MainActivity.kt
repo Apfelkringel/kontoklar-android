@@ -99,6 +99,7 @@ private fun KontoKlarApp() {
     var offerEditorOpen by remember { mutableStateOf(false) }
     var editingOffer by remember { mutableStateOf(Offer(customer = "", description = "", amountCents = 0)) }
     var offerToDelete by remember { mutableStateOf<Offer?>(null) }
+    var pendingInvoiceXml by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val backupExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { destination ->
         if (destination != null) scope.launch {
@@ -109,6 +110,15 @@ private fun KontoKlarApp() {
     }
     val backupImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->
         if (source != null) restoreBackupUri = source
+    }
+    val invoiceXmlExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/xml")) { destination ->
+        val xml = pendingInvoiceXml
+        pendingInvoiceXml = null
+        if (destination != null && xml != null) runCatching {
+            context.contentResolver.openOutputStream(destination)?.bufferedWriter(Charsets.UTF_8)?.use { it.write(xml) }
+                ?: error("Datei konnte nicht geöffnet werden.")
+        }.onSuccess { toast = "XRechnung-XML exportiert. Vor dem Versand bitte mit einem offiziellen Validator prüfen." }
+            .onFailure { toast = it.message ?: "XML-Export fehlgeschlagen." }
     }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) InvoiceReminderScheduler.reconcile(context, store.invoices())
@@ -338,7 +348,15 @@ private fun KontoKlarApp() {
         selectedInvoice?.let { invoice ->
             InvoiceDetailsDialog(
                 invoice = invoice,
+                profile = profile,
                 onDismiss = { selectedInvoice = null },
+                onExportXml = {
+                    val errors = XRechnung.validationErrors(invoice, profile)
+                    if (errors.isNotEmpty()) toast = "XRechnung noch nicht möglich: ${errors.joinToString(" ")}"
+                    else runCatching { XRechnung.create(invoice, profile) }
+                        .onSuccess { pendingInvoiceXml = it; invoiceXmlExportLauncher.launch("${invoice.number.ifBlank { "rechnung" }}.xml") }
+                        .onFailure { toast = it.message ?: "XRechnung konnte nicht erstellt werden." }
+                },
                 onSharePdf = { runCatching { shareInvoiceDraft(context, invoice) }.onFailure { toast = "PDF konnte nicht erstellt werden: ${it.message}" } },
                 onEdit = { invoiceToEdit = invoice; selectedInvoice = null; dialog = "Rechnung bearbeiten" },
                 onDelete = { invoiceToDelete = invoice; selectedInvoice = null },
@@ -712,7 +730,9 @@ private fun EmptyState(title: String, body: String) {
 @Composable
 private fun InvoiceDetailsDialog(
     invoice: Invoice,
+    profile: BusinessProfile,
     onDismiss: () -> Unit,
+    onExportXml: () -> Unit,
     onSharePdf: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -729,6 +749,11 @@ private fun InvoiceDetailsDialog(
                 Text("Datum: ${invoice.date} · fällig: ${invoice.dueDate}", color = Muted, fontSize = 12.sp)
                 Text("Status: ${invoice.status}", color = Forest, fontWeight = FontWeight.SemiBold)
                 Text("Das PDF wird ausdrücklich als unvollständiger Entwurf gekennzeichnet.", color = Muted, fontSize = 11.sp)
+                val xmlErrors = XRechnung.validationErrors(invoice, profile)
+                OutlinedButton(onClick = onExportXml, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Code, null); Spacer(Modifier.width(8.dp)); Text("XRechnung-XML speichern")
+                }
+                Text(if (xmlErrors.isEmpty()) "Ein-Zeilen-Rechnung · deutsches Inland · Regelsteuersatz" else "Voraussetzungen: ${xmlErrors.joinToString(" ")}", color = Muted, fontSize = 11.sp)
                 OutlinedButton(onClick = onSharePdf, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.PictureAsPdf, null); Spacer(Modifier.width(8.dp)); Text("Entwurfs-PDF teilen")
                 }
@@ -813,10 +838,15 @@ private fun ActionDialog(
     var receiptUri by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.receiptUri) }
     var expenseDate by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.date ?: LocalDate.now().toString()) }
     var invoiceDate by remember(title, existingInvoice?.id) { mutableStateOf(existingInvoice?.date ?: LocalDate.now().toString()) }
+    var serviceDate by remember(title, existingInvoice?.id) { mutableStateOf(existingInvoice?.serviceDate ?: LocalDate.now().toString()) }
     var invoiceDueDate by remember(title, existingInvoice?.id) { mutableStateOf(existingInvoice?.dueDate ?: LocalDate.now().plusDays(profile.paymentTermsDays.toLong()).toString()) }
     var scanStatus by remember { mutableStateOf<String?>(null) }
     var cameraOutputUri by remember { mutableStateOf<Uri?>(null) }
     var businessName by remember { mutableStateOf(profile.businessName) }
+    var businessEmail by remember { mutableStateOf(profile.email) }
+    var contactName by remember { mutableStateOf(profile.contactName) }
+    var contactPhone by remember { mutableStateOf(profile.phone) }
+    var businessIban by remember { mutableStateOf(profile.iban) }
     var street by remember { mutableStateOf(profile.street) }
     var postalCode by remember { mutableStateOf(profile.postalCode) }
     var city by remember { mutableStateOf(profile.city) }
@@ -861,6 +891,9 @@ private fun ActionDialog(
                 if (isProfile) {
                     Text("Diese Angaben bleiben auf diesem Gerät. Prüfe Pflichtangaben vor dem Versand deiner Rechnungen.", color = Muted, fontSize = 12.sp)
                     OutlinedTextField(businessName, { businessName = it }, label = { Text("Name / Unternehmen") }, singleLine = true)
+                    OutlinedTextField(businessEmail, { businessEmail = it }, label = { Text("Geschäftliche E-Mail für E-Rechnungen") }, singleLine = true)
+                    OutlinedTextField(contactName, { contactName = it }, label = { Text("Ansprechpartner für Rechnungen") }, singleLine = true)
+                    OutlinedTextField(contactPhone, { contactPhone = it }, label = { Text("Telefon des Ansprechpartners") }, singleLine = true)
                     OutlinedTextField(street, { street = it }, label = { Text("Straße und Hausnummer") }, singleLine = true)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(postalCode, { postalCode = it }, label = { Text("PLZ") }, modifier = Modifier.weight(1f), singleLine = true)
@@ -868,12 +901,13 @@ private fun ActionDialog(
                     }
                     OutlinedTextField(taxNumber, { taxNumber = it }, label = { Text("Steuernummer (optional)") }, singleLine = true)
                     OutlinedTextField(vatId, { vatId = it }, label = { Text("USt-IdNr. (optional)") }, singleLine = true)
+                    OutlinedTextField(businessIban, { businessIban = it }, label = { Text("IBAN für Überweisungen") }, singleLine = true)
                     OutlinedTextField(invoicePrefix, { invoicePrefix = it.take(12) }, label = { Text("Rechnungsnummer-Präfix") }, singleLine = true)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(paymentTermsDays, { paymentTermsDays = it.filter(Char::isDigit).take(2) }, label = { Text("Zahlungsziel (Tage)") }, modifier = Modifier.weight(1f), singleLine = true)
                         OutlinedTextField(vatRatePercent, { vatRatePercent = it.filter(Char::isDigit).take(2) }, label = { Text("USt.-Satz (%)") }, modifier = Modifier.weight(1f), singleLine = true)
                     }
-                    Text("Der USt.-Satz wird aktuell nur gespeichert, nicht in Steuerbeträge oder ein rechtsgültiges Rechnungsdokument übernommen.", color = Muted, fontSize = 11.sp)
+                    Text("Der USt.-Satz wird für den eingeschränkten XRechnung-Export verwendet. Steuerfreie Sonderfälle sind nicht unterstützt.", color = Muted, fontSize = 11.sp)
                 } else if (isInvoice) {
                     Box {
                         OutlinedTextField(
@@ -931,7 +965,8 @@ private fun ActionDialog(
                         OutlinedTextField(invoiceDate, { invoiceDate = it; error = null }, label = { Text("Rechnungsdatum") }, modifier = Modifier.weight(1f), singleLine = true)
                         OutlinedTextField(invoiceDueDate, { invoiceDueDate = it; error = null }, label = { Text("Fällig am") }, modifier = Modifier.weight(1f), singleLine = true)
                     }
-                    Text("Datum im Format JJJJ-MM-TT. Der Beleg wird weiterhin als unvollständiger Entwurf gekennzeichnet.", color = Muted, fontSize = 11.sp)
+                    OutlinedTextField(serviceDate, { serviceDate = it; error = null }, label = { Text("Leistungsdatum (JJJJ-MM-TT)") }, singleLine = true)
+                    Text("Bitte das tatsächliche Leistungsdatum angeben. Die erzeugte XML-Rechnung muss vor Versand fachlich und mit einem Validator geprüft werden.", color = Muted, fontSize = 11.sp)
                     Text("Zahlungsziel: ${profile.paymentTermsDays} Tage · Nummernpräfix: ${profile.invoicePrefix}", color = Muted, fontSize = 11.sp)
                 } else if (isExpense) {
                     OutlinedTextField(merchant, { merchant = it; error = null }, label = { Text("Händler / Lieferant") }, singleLine = true)
@@ -975,10 +1010,10 @@ private fun ActionDialog(
                 when {
                     isProfile && invoicePrefix.isBlank() -> error = "Bitte gib ein Rechnungsnummer-Präfix an."
                     isProfile && (paymentTermsDays.toIntOrNull() !in 1..90 || vatRatePercent.toIntOrNull() !in 0..27) -> error = "Zahlungsziel: 1–90 Tage; USt.-Satz: 0–27 %."
-                    isProfile -> onSaveProfile(BusinessProfile(businessName.trim(), street.trim(), postalCode.trim(), city.trim(), taxNumber.trim(), vatId.trim(), invoicePrefix.trim(), paymentTermsDays.toInt(), vatRatePercent.toInt()))
+                    isProfile -> onSaveProfile(BusinessProfile(businessName.trim(), street.trim(), postalCode.trim(), city.trim(), taxNumber.trim(), vatId.trim(), invoicePrefix.trim(), paymentTermsDays.toInt(), vatRatePercent.toInt(), businessEmail.trim(), contactName.trim(), contactPhone.trim(), businessIban.trim()))
                     isInvoice && customer.isBlank() -> error = "Bitte gib einen Kunden an."
                     isInvoice && description.isBlank() -> error = "Bitte beschreibe die Leistung."
-                    isInvoice && (runCatching { LocalDate.parse(invoiceDate) }.isFailure || runCatching { LocalDate.parse(invoiceDueDate) }.isFailure) -> error = "Bitte gib Rechnungs- und Fälligkeitsdatum als JJJJ-MM-TT an."
+                    isInvoice && (runCatching { LocalDate.parse(invoiceDate) }.isFailure || runCatching { LocalDate.parse(serviceDate) }.isFailure || runCatching { LocalDate.parse(invoiceDueDate) }.isFailure) -> error = "Bitte gib Rechnungs-, Leistungs- und Fälligkeitsdatum als JJJJ-MM-TT an."
                     isExpense && merchant.isBlank() -> error = "Bitte gib einen Händler an."
                     isExpense && runCatching { LocalDate.parse(expenseDate) }.isFailure -> error = "Bitte gib ein Datum im Format JJJJ-MM-TT an."
                     cents == null -> error = "Bitte gib einen gültigen positiven Betrag an (z. B. 125,50)."
@@ -991,6 +1026,7 @@ private fun ActionDialog(
                             description = description.trim(),
                             amountCents = cents,
                             date = invoiceDate,
+                            serviceDate = serviceDate,
                             dueDate = invoiceDueDate
                         )
                     )

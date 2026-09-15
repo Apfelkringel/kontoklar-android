@@ -16,6 +16,7 @@ data class Invoice(
     val customerAddress: String = "",
     val customerEmail: String = "",
     val date: String = LocalDate.now().toString(),
+    val serviceDate: String = LocalDate.now().toString(),
     val dueDate: String = LocalDate.now().plusDays(14).toString(),
     val status: String = "Entwurf"
 )
@@ -78,7 +79,11 @@ data class BusinessProfile(
     val vatId: String = "",
     val invoicePrefix: String = "RE",
     val paymentTermsDays: Int = 14,
-    val vatRatePercent: Int = 19
+    val vatRatePercent: Int = 19,
+    val email: String = "",
+    val contactName: String = "",
+    val phone: String = "",
+    val iban: String = ""
 )
 
 data class Expense(
@@ -131,7 +136,7 @@ class LocalData(context: Context) {
         require(importedExpenses.all { it.amountCents > 0 && it.merchant.isNotBlank() }) { "Die Sicherung enthält ungültige Ausgaben." }
         require(importedCustomers.all { it.name.isNotBlank() }) { "Die Sicherung enthält ungültige Kundendaten." }
         require(importedProducts.all { it.name.isNotBlank() && it.unitPriceCents > 0 }) { "Die Sicherung enthält ungültige Produkte oder Dienstleistungen." }
-        require(importedInvoices.map { it.id }.distinct().size == importedInvoices.size && importedInvoices.all { validIsoDate(it.date) && validIsoDate(it.dueDate) }) { "Die Sicherung enthält doppelte Rechnungen oder ungültige Rechnungsdaten." }
+        require(importedInvoices.map { it.id }.distinct().size == importedInvoices.size && importedInvoices.all { validIsoDate(it.date) && validIsoDate(it.serviceDate) && validIsoDate(it.dueDate) }) { "Die Sicherung enthält doppelte Rechnungen oder ungültige Rechnungsdaten." }
         require(importedOffers.map { it.id }.distinct().size == importedOffers.size && importedOffers.all { validIsoDate(it.date) && validIsoDate(it.validUntil) }) { "Die Sicherung enthält doppelte Angebote oder ungültige Angebotsdaten." }
         require(importedExpenses.map { it.id }.distinct().size == importedExpenses.size && importedExpenses.all { validIsoDate(it.date) }) { "Die Sicherung enthält doppelte Ausgaben oder ungültige Ausgabedaten." }
         require(importedCustomers.map { it.id }.distinct().size == importedCustomers.size) { "Die Sicherung enthält doppelte Kunden." }
@@ -157,7 +162,7 @@ class LocalData(context: Context) {
         customer = it.optString("customer", ""), description = it.optString("description", ""),
         amountCents = it.optLong("amountCents", 0), customerId = it.optString("customerId").takeIf(String::isNotBlank),
         customerAddress = it.optString("customerAddress"), customerEmail = it.optString("customerEmail"),
-        date = it.optString("date"), dueDate = it.optString("dueDate"), status = it.optString("status", "Entwurf")
+        date = it.optString("date"), serviceDate = it.optString("serviceDate", it.optString("date")), dueDate = it.optString("dueDate"), status = it.optString("status", "Entwurf")
     )
 
     private fun offerFromJson(it: JSONObject) = Offer(
@@ -184,13 +189,13 @@ class LocalData(context: Context) {
         description = it.optString("description"), unitPriceCents = it.optLong("unitPriceCents")
     )
 
-    fun invoices(): List<Invoice> = read("invoices") { Invoice(id = it.optString("id", UUID.randomUUID().toString()), number = it.optString("number", ""), customer = it.optString("customer", ""), description = it.optString("description", ""), amountCents = it.optLong("amountCents", 0), customerId = it.optString("customerId").takeIf(String::isNotBlank), customerAddress = it.optString("customerAddress"), customerEmail = it.optString("customerEmail"), date = it.optString("date", ""), dueDate = it.optString("dueDate", ""), status = it.optString("status", "Entwurf")) }
+    fun invoices(): List<Invoice> = read("invoices") { Invoice(id = it.optString("id", UUID.randomUUID().toString()), number = it.optString("number", ""), customer = it.optString("customer", ""), description = it.optString("description", ""), amountCents = it.optLong("amountCents", 0), customerId = it.optString("customerId").takeIf(String::isNotBlank), customerAddress = it.optString("customerAddress"), customerEmail = it.optString("customerEmail"), date = it.optString("date", ""), serviceDate = it.optString("serviceDate", it.optString("date", "")), dueDate = it.optString("dueDate", ""), status = it.optString("status", "Entwurf")) }
 
     fun offers(): List<Offer> = read("offers") { Offer(id = it.optString("id", UUID.randomUUID().toString()), number = it.optString("number"), customer = it.optString("customer"), description = it.optString("description"), amountCents = it.optLong("amountCents"), customerId = it.optString("customerId").takeIf(String::isNotBlank), customerAddress = it.optString("customerAddress"), customerEmail = it.optString("customerEmail"), date = it.optString("date"), validUntil = it.optString("validUntil"), status = it.optString("status", "Entwurf"), convertedInvoiceId = it.optString("convertedInvoiceId").takeIf(String::isNotBlank)) }
 
     fun expenses(): List<Expense> = read("expenses") { Expense(id = it.optString("id", UUID.randomUUID().toString()), merchant = it.optString("merchant", ""), category = it.optString("category", "Sonstiges"), amountCents = it.optLong("amountCents", 0), date = it.optString("date", ""), note = it.optString("note", ""), receiptUri = it.optString("receiptUri").takeIf(String::isNotBlank)) }
 
-    fun saveInvoices(values: List<Invoice>) = write("invoices", values.map { JSONObject().put("id", it.id).put("number", it.number).put("customer", it.customer).put("customerId", it.customerId).put("customerAddress", it.customerAddress).put("customerEmail", it.customerEmail).put("description", it.description).put("amountCents", it.amountCents).put("date", it.date).put("dueDate", it.dueDate).put("status", it.status) })
+    fun saveInvoices(values: List<Invoice>) = write("invoices", values.map { JSONObject().put("id", it.id).put("number", it.number).put("customer", it.customer).put("customerId", it.customerId).put("customerAddress", it.customerAddress).put("customerEmail", it.customerEmail).put("description", it.description).put("amountCents", it.amountCents).put("date", it.date).put("serviceDate", it.serviceDate).put("dueDate", it.dueDate).put("status", it.status) })
     fun saveOffers(values: List<Offer>) = write("offers", values.map { JSONObject().put("id", it.id).put("number", it.number).put("customer", it.customer).put("customerId", it.customerId).put("customerAddress", it.customerAddress).put("customerEmail", it.customerEmail).put("description", it.description).put("amountCents", it.amountCents).put("date", it.date).put("validUntil", it.validUntil).put("status", it.status).put("convertedInvoiceId", it.convertedInvoiceId) })
     fun saveExpenses(values: List<Expense>) = write("expenses", values.map { JSONObject().put("id", it.id).put("merchant", it.merchant).put("category", it.category).put("amountCents", it.amountCents).put("date", it.date).put("note", it.note).put("receiptUri", it.receiptUri) })
     fun customers(): List<Customer> = read("customers") { Customer(id = it.optString("id", UUID.randomUUID().toString()), name = it.optString("name"), email = it.optString("email"), street = it.optString("street"), postalCode = it.optString("postalCode"), city = it.optString("city"), taxNumber = it.optString("taxNumber")) }
@@ -212,7 +217,8 @@ class LocalData(context: Context) {
             .put("postalCode", profile.postalCode).put("city", profile.city)
             .put("taxNumber", profile.taxNumber).put("vatId", profile.vatId)
             .put("invoicePrefix", profile.invoicePrefix).put("paymentTermsDays", profile.paymentTermsDays)
-            .put("vatRatePercent", profile.vatRatePercent)
+            .put("vatRatePercent", profile.vatRatePercent).put("email", profile.email)
+            .put("contactName", profile.contactName).put("phone", profile.phone).put("iban", profile.iban)
 
     private fun businessProfileFromJson(json: JSONObject) = BusinessProfile(
         businessName = json.optString("businessName"), street = json.optString("street"),
@@ -220,7 +226,9 @@ class LocalData(context: Context) {
         taxNumber = json.optString("taxNumber"), vatId = json.optString("vatId"),
         invoicePrefix = json.optString("invoicePrefix", "RE").ifBlank { "RE" },
         paymentTermsDays = json.optInt("paymentTermsDays", 14).coerceIn(1, 90),
-        vatRatePercent = json.optInt("vatRatePercent", 19).coerceIn(0, 27)
+        vatRatePercent = json.optInt("vatRatePercent", 19).coerceIn(0, 27),
+        email = json.optString("email"), contactName = json.optString("contactName"),
+        phone = json.optString("phone"), iban = json.optString("iban")
     )
 
     fun nextInvoiceNumber(): String {

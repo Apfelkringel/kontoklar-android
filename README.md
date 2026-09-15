@@ -12,7 +12,7 @@ Native Android app prototype built with Kotlin and Jetpack Compose. The app uses
 - Sequential invoice draft numbers, locally persisted invoice states (draft/sent/paid), PDF draft generation, and Android share sheet.
 - Edit and delete invoice drafts while preserving their number; sent and paid invoices cannot be rewritten as drafts.
 - Schedule one local Android reminder for a sent invoice from 09:00 on the day after its due date; marking it paid cancels the alarm and any visible reminder. The Android 13+ notification permission is requested when an invoice is first marked sent, and pending reminders are restored after reboot, time changes, and app updates.
-- Local business profile settings for sender identity/address, optional tax identifiers, invoice prefix, payment term, and a stored VAT rate. The prefix and payment term are applied to newly created invoice drafts; VAT is not calculated or printed as a legal invoice tax breakdown.
+- Local business profile settings for sender identity/address, e-invoice email, optional tax identifiers, invoice prefix, payment term, and VAT rate. The prefix and payment term are applied to new drafts; gross amounts are split into net and VAT for the limited XRechnung export.
 - Manually record expenses with merchant, amount, category, date, and note.
 - Edit, inspect, and delete saved expenses; reopen their attached image or PDF receipt.
 - Attach a local image or PDF receipt to an expense; the expense list reports how many receipts are missing.
@@ -24,20 +24,21 @@ Native Android app prototype built with Kotlin and Jetpack Compose. The app uses
 - German and dot-decimal Euro input parsing, with unit tests.
 - Navigation for invoices, expenses, tax overview, and account/settings areas.
 - In-app check for the latest public GitHub release, private-cache APK download, SHA-256 verification against the GitHub asset digest, and direct handoff to Android's package installer.
+- Export a limited single-line domestic German XRechnung 3.0.2 UBL XML file via Android's document picker after checking the required invoice, addresses, electronic addresses, German VAT-ID, service-date, and VAT inputs.
 - Android's system installer confirms package updates; it requires the one-time "Install unknown apps" permission.
 - Clear distinction between local records and external banking/tax services.
 
 ## Not implemented yet
 
-There is no account/login or cloud sync, bank/PSD2 connection, actual automatic transfer of tax reserves, legally complete invoice export or e-invoice transmission, tax calculation or submission, or accountant collaboration. OCR is local and heuristic; it is not guaranteed to read receipts correctly and always requires user review. Invoice PDFs are clearly marked as incomplete drafts and must not be used as tax documents. The tax screen is informational and does not submit declarations or provide binding calculations.
+There is no account/login or cloud sync, bank/PSD2 connection, actual automatic transfer of tax reserves, incoming e-invoice import, transmission/network delivery, tax-return calculation or submission, or accountant collaboration. XRechnung export currently supports only one-line domestic invoices with a German VAT-ID and standard positive VAT rates; tax-number-only profiles, tax exemptions, small-business invoices, cross-border/reverse-charge cases, and government procurement routing are not supported. Review every XML and validate it with the official KoSIT validator before use; the export is not legal or tax advice. OCR is local and heuristic and always requires user review. Invoice PDFs remain clearly marked as incomplete drafts. The tax screen is informational and does not submit declarations or provide binding calculations.
 
 ## Publishing an update
 
-Push a version tag such as `v0.12.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
+Push a version tag such as `v0.13.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
 
 ## Build
 
-Requires JDK 17+ and Android SDK Platform 35 / Build Tools 35.0.0.
+Requires JDK 17+ and Android SDK Platform 35 / Build Tools 34.0.0. The workspace-local SDK is kept under the ignored `build/android-sdk/` directory on the external SSD.
 
 ```sh
 ./gradlew testDebugUnitTest assembleDebug

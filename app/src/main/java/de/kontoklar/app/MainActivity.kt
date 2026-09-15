@@ -135,7 +135,7 @@ private fun KontoKlarApp() {
                 Page.Home -> Dashboard(invoices, expenses, onNavigate = { page = it })
                 Page.Invoices -> InvoiceScreen(invoices, onAction = { dialog = it }, onSelect = { selectedInvoice = it })
                 Page.Expenses -> ExpenseScreen(expenses, onAction = { dialog = it }, onSelect = { selectedExpense = it })
-                Page.Taxes -> TaxScreen(onAction = { action ->
+                Page.Taxes -> TaxScreen(invoices = invoices, expenses = expenses, onAction = { action ->
                     when (action) {
                         "Steuerberater teilen" -> runCatching { shareBookkeepingCsv(context, invoices, expenses) }
                             .onFailure { toast = it.message ?: "Export konnte nicht erstellt werden." }
@@ -458,20 +458,43 @@ private fun ExpenseScreen(expenses: List<Expense>, onAction: (String) -> Unit, o
 }
 
 @Composable
-private fun TaxScreen(onAction: (String) -> Unit) {
+private fun TaxScreen(invoices: List<Invoice>, expenses: List<Expense>, onAction: (String) -> Unit) {
+    var selectedYear by remember { mutableIntStateOf(LocalDate.now().year) }
+    val report = remember(selectedYear, invoices, expenses) { taxYearReport(selectedYear, invoices, expenses) }
     LazyColumn(contentPadding = PaddingValues(18.dp, 14.dp, 18.dp, 90.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Card(colors = CardDefaults.cardColors(containerColor = Forest), shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.padding(20.dp)) {
-                    Text("STEUERPROFIL", color = Color.White.copy(alpha = .75f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp)); Text("Noch nicht eingerichtet", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    Text("Eine belastbare Schätzung braucht Angaben zu Tätigkeit, Rechtsform, Umsatzsteuer und Vorauszahlungen.", color = Color.White.copy(alpha = .8f), fontSize = 13.sp)
-                    Spacer(Modifier.height(16.dp))
-                    Text("Diese App erstellt derzeit keine rechtsverbindlichen Erklärungen und berechnet keine verbindliche Steuerlast.", color = Color.White.copy(alpha = .85f), fontSize = 12.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("JAHRESÜBERSICHT", color = Color.White.copy(alpha = .75f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("${report.year}", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                        }
+                        IconButton(onClick = { selectedYear-- }) { Icon(Icons.Default.ChevronLeft, "Vorjahr", tint = Color.White) }
+                        IconButton(onClick = { if (selectedYear < LocalDate.now().year) selectedYear++ }, enabled = selectedYear < LocalDate.now().year) { Icon(Icons.Default.ChevronRight, "Folgejahr", tint = Color.White) }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text("Gestellte Rechnungen · ${report.issuedInvoiceCount}", color = Color.White.copy(alpha = .8f), fontSize = 13.sp)
+                    Text(formatEuro(report.issuedInvoiceCents), color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(10.dp))
+                    Text("Abzüglich erfasster Ausgaben: ${formatEuro(report.expenseCents)}", color = Color.White.copy(alpha = .9f), fontSize = 13.sp)
+                    Text("Differenz der erfassten Bruttobeträge: ${formatEuro(report.recordedDifferenceCents)}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(12.dp))
+                    Text("Nur eine Übersicht deiner Eingaben: keine Steuerberechnung. Umsatzsteuer, Zahlungszeitpunkt, Abschreibungen und weitere steuerliche Regeln werden nicht berücksichtigt.", color = Color.White.copy(alpha = .82f), fontSize = 11.sp)
                 }
             }
         }
-        item { Text("Nächste Schritte", fontWeight = FontWeight.Bold, color = Ink, fontSize = 18.sp) }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Prüfen", fontWeight = FontWeight.Bold, color = Ink, fontSize = 17.sp)
+                    Text("Offene Rechnungen: ${formatEuro(report.openInvoiceCents)}", color = Ink)
+                    Text("Überfällige Rechnungen: ${report.overdueInvoiceCount}", color = if (report.overdueInvoiceCount > 0) Color(0xFF9B3D24) else Muted)
+                    Text("Ausgaben ohne Beleg: ${report.missingReceiptCount}", color = if (report.missingReceiptCount > 0) Color(0xFF9B3D24) else Muted)
+                }
+            }
+        }
+        item { Text("Weitere Werkzeuge", fontWeight = FontWeight.Bold, color = Ink, fontSize = 18.sp) }
         item { TaskRow("Steuerprofil vervollständigen", "Tätigkeit, Rechtsform und Umsatzsteuer", "Einrichten", Icons.Default.Tune, onClick = { onAction("Steuerprofil") }) }
         item { TaskRow("Steuertermine verbinden", "Fristen hängen von deinen Angaben ab", "Einrichten", Icons.Default.Event, onClick = { onAction("Steuertermine") }) }
         item { OutlinedButton(onClick = { onAction("Steuerberater teilen") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Share, null); Spacer(Modifier.width(8.dp)); Text("Mit Steuerberater teilen") } }

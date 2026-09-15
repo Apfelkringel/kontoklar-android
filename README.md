@@ -18,6 +18,7 @@ Native Android app prototype built with Kotlin and Jetpack Compose. The app uses
 - Persist those records locally with Android SharedPreferences.
 - Export or restore a ZIP backup containing the local records, profile, and attached receipts; restoring is explicit and replaces the current local data only after confirmation.
 - Share a local invoice/expense CSV through Android's share sheet for bookkeeping handoff; exports are marked as working data, not tax returns.
+- Review a year-based summary of issued invoices, recorded expenses, the gross-recorded difference, open/overdue invoices, and expenses missing receipts. Draft invoices are excluded; this is not tax advice or a tax calculation.
 - German and dot-decimal Euro input parsing, with unit tests.
 - Navigation for invoices, expenses, tax overview, and account/settings areas.
 - In-app check for the latest public GitHub release, private-cache APK download, SHA-256 verification against the GitHub asset digest, and direct handoff to Android's package installer.
@@ -30,7 +31,7 @@ There is no account/login or cloud sync, bank/PSD2 connection, actual automatic 
 
 ## Publishing an update
 
-Push a version tag such as `v0.9.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
+Push a version tag such as `v0.10.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
 
 ## Build
 

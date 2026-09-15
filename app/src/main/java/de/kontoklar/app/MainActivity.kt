@@ -1,11 +1,9 @@
 package de.kontoklar.app
 
 import android.os.Bundle
-import android.app.DownloadManager
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Environment
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -33,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import kotlinx.coroutines.launch
 import java.io.File
 import java.time.LocalDate
 
@@ -358,6 +357,37 @@ private fun AppUpdateCard() {
     var error by remember { mutableStateOf<String?>(null) }
     var checking by remember { mutableStateOf(true) }
     var downloading by remember { mutableStateOf(false) }
+    var installerOpened by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val startDownload: (AppRelease) -> Unit = { latest ->
+        if (!downloading) {
+            downloading = true
+            error = null
+            installerOpened = false
+            scope.launch {
+                runCatching {
+                    val apk = downloadVerifiedApk(context.cacheDir, latest)
+                    val apkUri = FileProvider.getUriForFile(context, "${context.packageName}.files", apk)
+                    val installIntent = Intent(Intent.ACTION_VIEW)
+                        .setDataAndType(apkUri, "application/vnd.android.package-archive")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(installIntent)
+                    installerOpened = true
+                }.onFailure { failure ->
+                    error = failure.message?.takeIf { it.isNotBlank() } ?: "Update konnte nicht vorbereitet werden. Bitte erneut versuchen."
+                }
+                downloading = false
+            }
+        }
+    }
+    val installPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        val latest = release
+        if (Build.VERSION.SDK_INT >= 26 && context.packageManager.canRequestPackageInstalls() && latest != null) {
+            startDownload(latest)
+        } else if (latest != null) {
+            error = "Bitte erlaube KontoKlar in Android, Apps aus dieser Quelle zu installieren, und tippe danach erneut auf „Update installieren“."
+        }
+    }
     LaunchedEffect(Unit) {
         runCatching { fetchLatestRelease() }
             .onSuccess { release = it }
@@ -377,7 +407,6 @@ private fun AppUpdateCard() {
             }
             when {
                 checking -> Text("Suche nach einer neuen Version …", color = Muted, fontSize = 12.sp)
-                error != null -> Text(error!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                 release == null -> Text("Kein Release gefunden.", color = Muted, fontSize = 12.sp)
                 else -> {
                     val latest = release!!
@@ -387,35 +416,33 @@ private fun AppUpdateCard() {
                     if (hasUpdate) {
                         Button(
                             onClick = {
-                                if (android.os.Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
-                                    context.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}")))
+                                if (Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
+                                    installPermissionLauncher.launch(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}")))
                                 } else {
-                                    runCatching {
-                                        val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                                        val request = DownloadManager.Request(Uri.parse(latest.apkUrl))
-                                            .setTitle("KontoKlar ${latest.version}")
-                                            .setDescription("APK wird geladen. Tippe nach Abschluss auf die Download-Benachrichtigung, um das Update zu installieren.")
-                                            .setMimeType("application/vnd.android.package-archive")
-                                            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                                            .setAllowedOverMetered(true)
-                                            .setAllowedOverRoaming(false)
-                                            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "KontoKlar-${latest.version}.apk")
-                                        manager.enqueue(request)
-                                        downloading = true
-                                    }.onFailure { error = it.message ?: "Download konnte nicht gestartet werden." }
+                                    startDownload(latest)
                                 }
                             },
-                            enabled = !downloading,
+                            enabled = !downloading && !installerOpened,
                             modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.buttonColors(containerColor = Forest),
                             shape = RoundedCornerShape(12.dp)
-                        ) { Text(if (downloading) "Download gestartet" else "Update herunterladen") }
-                        if (android.os.Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
+                        ) {
+                            if (downloading) CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                            Text(when {
+                                downloading -> "APK wird geprüft …"
+                                installerOpened -> "Im Android-Installer geöffnet"
+                                else -> "Update installieren"
+                            })
+                        }
+                        if (downloading) Text("APK wird geladen und auf Echtheit geprüft …", color = Muted, fontSize = 11.sp)
+                        if (installerOpened) Text("Bestätige die Installation im Android-Systemdialog.", color = Forest, fontSize = 11.sp)
+                        if (Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
                             Text("Für die Installation musst du KontoKlar einmalig in den Android-Einstellungen als Installationsquelle erlauben.", color = Muted, fontSize = 11.sp)
                         }
                     }
                 }
             }
+            if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
             Text("Downloads kommen signiert aus den öffentlichen GitHub-Releases. Android zeigt vor dem Installieren seine Systembestätigung.", color = Muted, fontSize = 10.sp)
         }
     }

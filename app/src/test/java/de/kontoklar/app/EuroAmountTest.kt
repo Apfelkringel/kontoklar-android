@@ -25,6 +25,14 @@ class EuroAmountTest {
         assertEquals(false, isNewerVersion("0.1.9", "0.2.0"))
     }
 
+    @Test fun acceptsOnlyValidSha256Digests() {
+        assertEquals(true, isValidSha256("a".repeat(64)))
+        assertEquals(true, isValidSha256("ABCDEF0123456789".repeat(4)))
+        assertEquals(false, isValidSha256("sha256:" + "a".repeat(64)))
+        assertEquals(false, isValidSha256("a".repeat(63)))
+        assertEquals(false, isValidSha256("g".repeat(64)))
+    }
+
     @Test fun invoiceNumbersAreSequentialPerYear() {
         assertEquals("RE-2026-0003", nextInvoiceNumber(2026, listOf("RE-2026-0001", "RE-2025-0100", "RE-2026-0002")))
         assertEquals("RE-2027-0001", nextInvoiceNumber(2027, listOf("RE-2026-0015")))

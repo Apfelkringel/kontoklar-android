@@ -25,16 +25,17 @@ Native Android app prototype built with Kotlin and Jetpack Compose. The app uses
 - Navigation for invoices, expenses, tax overview, and account/settings areas.
 - In-app check for the latest public GitHub release, private-cache APK download, SHA-256 verification against the GitHub asset digest, and direct handoff to Android's package installer.
 - Export a limited single-line domestic German XRechnung 3.0.2 UBL XML file via Android's document picker after checking the required invoice, addresses, electronic addresses, German VAT-ID, service-date, and VAT inputs.
+- Import incoming XRechnung UBL XML locally, review supplier/invoice/gross/VAT data, then save it as an expense with the original XML attached; XML attachments are included in ZIP backups.
 - Android's system installer confirms package updates; it requires the one-time "Install unknown apps" permission.
 - Clear distinction between local records and external banking/tax services.
 
 ## Not implemented yet
 
-There is no account/login or cloud sync, bank/PSD2 connection, actual automatic transfer of tax reserves, incoming e-invoice import, transmission/network delivery, tax-return calculation or submission, or accountant collaboration. XRechnung export currently supports only one-line domestic invoices with a German VAT-ID and standard positive VAT rates; tax-number-only profiles, tax exemptions, small-business invoices, cross-border/reverse-charge cases, and government procurement routing are not supported. Review every XML and validate it with the official KoSIT validator before use; the export is not legal or tax advice. OCR is local and heuristic and always requires user review. Invoice PDFs remain clearly marked as incomplete drafts. The tax screen is informational and does not submit declarations or provide binding calculations.
+There is no account/login or cloud sync, bank/PSD2 connection, actual automatic transfer of tax reserves, ZUGFeRD embedded-PDF or CII import, PEPPOL network delivery, tax-return calculation or submission, or accountant collaboration. XRechnung export currently supports only one-line domestic invoices with a German VAT-ID and standard positive VAT rates; tax-number-only profiles, tax exemptions, small-business invoices, cross-border/reverse-charge cases, and government procurement routing are not supported. Review every XML and validate it with the official KoSIT validator before use; the export is not legal or tax advice. OCR is local and heuristic and always requires user review. Invoice PDFs remain clearly marked as incomplete drafts. The tax screen is informational and does not submit declarations or provide binding calculations.
 
 ## Publishing an update
 
-Push a version tag such as `v0.13.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
+Push a version tag such as `v0.14.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
 
 ## Build
 

@@ -17,7 +17,7 @@ import java.util.zip.ZipOutputStream
 private const val MAX_BACKUP_JSON_BYTES = 8L * 1024 * 1024
 private const val MAX_RECEIPT_BYTES = 60L * 1024 * 1024
 private const val MAX_BACKUP_BYTES = 300L * 1024 * 1024
-private val backupAttachmentPattern = Regex("attachments/[a-fA-F0-9-]{1,64}\\.(jpg|jpeg|png|webp|pdf|bin)")
+private val backupAttachmentPattern = Regex("attachments/[a-fA-F0-9-]{1,64}\\.(jpg|jpeg|png|webp|pdf|xml|bin)")
 
 fun exportBackup(context: Context, destination: Uri, store: LocalData) {
     val snapshot = store.exportSnapshot()
@@ -141,7 +141,7 @@ private fun receiptExtension(context: Context, uri: Uri): String {
     val mime = context.contentResolver.getType(uri)
     val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)
         ?: uri.lastPathSegment?.substringAfterLast('.', "")
-    return extension?.lowercase()?.takeIf { it in setOf("jpg", "jpeg", "png", "webp", "pdf") } ?: "bin"
+    return extension?.lowercase()?.takeIf { it in setOf("jpg", "jpeg", "png", "webp", "pdf", "xml") } ?: "bin"
 }
 
 private fun readLimited(input: ZipInputStream, limit: Long, label: String): ByteArray {

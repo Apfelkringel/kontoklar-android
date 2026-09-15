@@ -100,6 +100,9 @@ private fun KontoKlarApp() {
     var editingOffer by remember { mutableStateOf(Offer(customer = "", description = "", amountCents = 0)) }
     var offerToDelete by remember { mutableStateOf<Offer?>(null) }
     var pendingInvoiceXml by remember { mutableStateOf<String?>(null) }
+    var incomingInvoice by remember { mutableStateOf<ParsedIncomingInvoice?>(null) }
+    var incomingInvoiceUri by remember { mutableStateOf<Uri?>(null) }
+    var incomingInvoiceError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val backupExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { destination ->
         if (destination != null) scope.launch {
@@ -110,6 +113,22 @@ private fun KontoKlarApp() {
     }
     val backupImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->
         if (source != null) restoreBackupUri = source
+    }
+    val incomingInvoiceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->
+        if (source != null) scope.launch {
+            runCatching {
+                runCatching { context.contentResolver.takePersistableUriPermission(source, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                withContext(Dispatchers.IO) {
+                    val name = source.lastPathSegment?.substringAfterLast('/')?.ifBlank { "E-Rechnung.xml" } ?: "E-Rechnung.xml"
+                    context.contentResolver.openInputStream(source)?.use { parseIncomingInvoiceXml(it, name) }
+                        ?: error("Die ausgewählte Datei kann nicht gelesen werden.")
+                }
+            }.onSuccess { parsed ->
+                incomingInvoiceError = null
+                if (expenses.any { it.receiptUri == source.toString() }) toast = "Diese Datei wurde bereits als Ausgabe übernommen."
+                else { incomingInvoiceUri = source; incomingInvoice = parsed }
+            }.onFailure { incomingInvoiceError = it.message ?: "E-Rechnung konnte nicht importiert werden." }
+        }
     }
     val invoiceXmlExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/xml")) { destination ->
         val xml = pendingInvoiceXml
@@ -157,7 +176,9 @@ private fun KontoKlarApp() {
             when (page) {
                 Page.Home -> Dashboard(invoices, expenses, onNavigate = { page = it })
                 Page.Invoices -> InvoiceScreen(invoices, onAction = { dialog = it }, onSelect = { selectedInvoice = it })
-                Page.Expenses -> ExpenseScreen(expenses, onAction = { dialog = it }, onSelect = { selectedExpense = it })
+                Page.Expenses -> ExpenseScreen(expenses, onAction = { action ->
+                    if (action == "E-Rechnung empfangen") incomingInvoiceLauncher.launch(arrayOf("*/*")) else dialog = action
+                }, onSelect = { selectedExpense = it })
                 Page.Taxes -> TaxScreen(invoices = invoices, expenses = expenses, onAction = { action ->
                     when (action) {
                         "Steuerberater teilen" -> runCatching { shareBookkeepingCsv(context, invoices, expenses) }
@@ -411,6 +432,44 @@ private fun KontoKlarApp() {
                 dismissButton = { TextButton(onClick = { expenseToDelete = null }) { Text("Abbrechen") } }
             )
         }
+        incomingInvoice?.let { parsed ->
+            IncomingInvoiceReviewDialog(
+                invoice = parsed,
+                onDismiss = { incomingInvoice = null; incomingInvoiceUri = null },
+                onConfirm = {
+                    val source = incomingInvoiceUri
+                    if (source == null) toast = "Die Originaldatei ist nicht mehr verfügbar. Bitte importiere sie erneut."
+                    else {
+                        val imported = Expense(
+                            merchant = parsed.supplier,
+                            category = "Sonstiges",
+                            amountCents = parsed.amountCents,
+                            date = parsed.date,
+                            note = buildString {
+                                append("E-Rechnung ${parsed.invoiceNumber}")
+                                parsed.vatCents?.let { append(" · USt ${formatEuro(it)}") }
+                            },
+                            receiptUri = source.toString()
+                        )
+                        expenses = expenses.upsertExpense(imported)
+                        store.saveExpenses(expenses)
+                        incomingInvoice = null
+                        incomingInvoiceUri = null
+                        page = Page.Expenses
+                        selectedExpense = imported
+                        toast = "E-Rechnung geprüft und als Ausgabe übernommen"
+                    }
+                }
+            )
+        }
+        incomingInvoiceError?.let { message ->
+            AlertDialog(
+                onDismissRequest = { incomingInvoiceError = null },
+                title = { Text("E-Rechnung konnte nicht importiert werden") },
+                text = { Text(message) },
+                confirmButton = { TextButton(onClick = { incomingInvoiceError = null }) { Text("Schließen") } }
+            )
+        }
     }
 }
 
@@ -496,7 +555,6 @@ private fun InvoiceScreen(invoices: List<Invoice>, onAction: (String) -> Unit, o
             val icon = if (invoice.status == "Bezahlt") Icons.Default.CheckCircle else Icons.Default.Description
             EntryRow(Entry(invoice.customer, "${invoice.number} · ${invoice.status} · fällig ${invoice.dueDate}", formatEuro(invoice.amountCents), icon, if (invoice.status == "Bezahlt") Mint else Color(0xFFE6F2EB)), onClick = { onSelect(invoice) })
         }
-        item { OutlinedButton(onClick = { onAction("E-Rechnung empfangen") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Inbox, null); Spacer(Modifier.width(8.dp)); Text("E-Rechnung empfangen") } }
     }
 }
 
@@ -504,6 +562,7 @@ private fun InvoiceScreen(invoices: List<Invoice>, onAction: (String) -> Unit, o
 private fun ExpenseScreen(expenses: List<Expense>, onAction: (String) -> Unit, onSelect: (Expense) -> Unit) {
     LazyColumn(contentPadding = PaddingValues(18.dp, 14.dp, 18.dp, 90.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Card(colors = CardDefaults.cardColors(containerColor = Mint), shape = RoundedCornerShape(20.dp)) { Row(Modifier.fillMaxWidth().clickable { onAction("Beleg scannen") }.padding(18.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.DocumentScanner, null, tint = Forest, modifier = Modifier.size(28.dp)); Spacer(Modifier.width(14.dp)); Column { Text("Beleg scannen", color = Ink, fontWeight = FontWeight.Bold); Text("Foto aufnehmen oder Datei auswählen", color = Muted, fontSize = 12.sp) }; Spacer(Modifier.weight(1f)); Icon(Icons.Default.ChevronRight, null, tint = Forest) } } }
+        item { OutlinedButton(onClick = { onAction("E-Rechnung empfangen") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Inbox, null); Spacer(Modifier.width(8.dp)); Text("E-Rechnung importieren") } }
         item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { MetricCard("Ausgaben", formatEuro(expenses.sumOf { it.amountCents }), "${expenses.size} erfasst", Icons.Default.Payments, Modifier.weight(1f)); MetricCard("Beleg fehlt", "${expenses.count { it.receiptUri.isNullOrBlank() }}", "Ausgaben", Icons.Default.ErrorOutline, Modifier.weight(1f)) } }
         item { SectionTitle("Alle Ausgaben", "") }
         if (expenses.isEmpty()) item { EmptyState("Noch keine Ausgaben", "Erfasse einen Beleg oder füge eine Ausgabe hinzu.") }

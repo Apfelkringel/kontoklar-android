@@ -66,6 +66,7 @@ private fun KontoKlarApp() {
     var invoices by remember { mutableStateOf(store.invoices()) }
     var expenses by remember { mutableStateOf(store.expenses()) }
     var customers by remember { mutableStateOf(store.customers()) }
+    var offers by remember { mutableStateOf(store.offers()) }
     var profile by remember { mutableStateOf(store.businessProfile()) }
     var selectedInvoice by remember { mutableStateOf<Invoice?>(null) }
     var page by remember { mutableStateOf(Page.Home) }
@@ -75,6 +76,10 @@ private fun KontoKlarApp() {
     var customerEditorOpen by remember { mutableStateOf(false) }
     var editingCustomer by remember { mutableStateOf(Customer()) }
     var customerToDelete by remember { mutableStateOf<Customer?>(null) }
+    var offersOpen by remember { mutableStateOf(false) }
+    var offerEditorOpen by remember { mutableStateOf(false) }
+    var editingOffer by remember { mutableStateOf(Offer(customer = "", description = "", amountCents = 0)) }
+    var offerToDelete by remember { mutableStateOf<Offer?>(null) }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(toast) { toast?.let { snackbar.showSnackbar(it); toast = null } }
 
@@ -112,6 +117,7 @@ private fun KontoKlarApp() {
                 Page.More -> MoreScreen(onAction = { action ->
                     if (action == "Einstellungen" || action == "Unternehmensprofil") dialog = "Unternehmensprofil"
                     else if (action == "Kunden") customersOpen = true
+                    else if (action == "Angebote") offersOpen = true
                     else toast = "$action – wird eingerichtet"
                 })
             }
@@ -157,6 +163,48 @@ private fun KontoKlarApp() {
                     }) { Text("Löschen", color = MaterialTheme.colorScheme.error) }
                 },
                 dismissButton = { TextButton(onClick = { customerToDelete = null }) { Text("Abbrechen") } }
+            )
+        }
+        if (offersOpen) OfferManagerDialog(
+            offers = offers,
+            onDismiss = { offersOpen = false },
+            onAdd = { editingOffer = Offer(customer = "", description = "", amountCents = 0); offerEditorOpen = true },
+            onEdit = { editingOffer = it; offerEditorOpen = true },
+            onDelete = { offerToDelete = it },
+            onMarkSent = { offer -> offers = offers.map { if (it.id == offer.id) it.copy(status = "Versendet") else it }; store.saveOffers(offers); toast = "Angebot als versendet markiert" },
+            onAccept = { offer -> offers = offers.map { if (it.id == offer.id) it.copy(status = "Angenommen") else it }; store.saveOffers(offers); toast = "Angebot angenommen" },
+            onReject = { offer -> offers = offers.map { if (it.id == offer.id) it.copy(status = "Abgelehnt") else it }; store.saveOffers(offers); toast = "Angebot abgelehnt" },
+            onConvert = { offer ->
+                if (offer.status == "Angenommen" && offer.convertedInvoiceId == null) {
+                    val invoice = offer.toInvoice(store.nextInvoiceNumber(), profile.paymentTermsDays)
+                    invoices = listOf(invoice) + invoices
+                    store.saveInvoices(invoices)
+                    offers = offers.map { if (it.id == offer.id) it.copy(status = "Abgerechnet", convertedInvoiceId = invoice.id) else it }
+                    store.saveOffers(offers)
+                    toast = "Rechnungsentwurf ${invoice.number} erstellt"
+                }
+            },
+            onShare = { offer -> runCatching { shareOfferDraft(context, offer) }.onFailure { toast = "Angebots-PDF konnte nicht erstellt werden: ${it.message}" } }
+        )
+        if (offerEditorOpen) OfferEditorDialog(
+            offer = editingOffer,
+            customers = customers,
+            onDismiss = { offerEditorOpen = false },
+            onSave = { saved ->
+                val persisted = if (saved.number.isBlank()) saved.copy(number = store.nextOfferNumber()) else saved
+                offers = if (offers.any { it.id == persisted.id }) offers.map { if (it.id == persisted.id) persisted else it } else listOf(persisted) + offers
+                store.saveOffers(offers)
+                offerEditorOpen = false
+                toast = "Angebot ${persisted.number} gespeichert"
+            }
+        )
+        offerToDelete?.let { offer ->
+            AlertDialog(
+                onDismissRequest = { offerToDelete = null },
+                title = { Text("Angebot löschen?") },
+                text = { Text("${offer.number} für ${offer.customer} wird entfernt. Bereits erstellte Rechnungen bleiben unberührt.") },
+                confirmButton = { TextButton(onClick = { offers = offers.filterNot { it.id == offer.id }; store.saveOffers(offers); offerToDelete = null; toast = "Angebot gelöscht" }) { Text("Löschen", color = MaterialTheme.colorScheme.error) } },
+                dismissButton = { TextButton(onClick = { offerToDelete = null }) { Text("Abbrechen") } }
             )
         }
         selectedInvoice?.let { invoice ->
@@ -295,7 +343,7 @@ private fun TaxScreen(onAction: (String) -> Unit) {
 
 @Composable
 private fun MoreScreen(onAction: (String) -> Unit) {
-    val links = listOf("Bankkonten & Accountable Banking" to Icons.Default.AccountBalanceWallet, "Kunden" to Icons.Default.People, "Produkte & Dienstleistungen" to Icons.Default.Inventory2, "Dokumente" to Icons.Default.Folder, "Steuer-Assistent" to Icons.Default.AutoAwesome, "Mit Buchhalter teilen" to Icons.Default.Share, "Einstellungen" to Icons.Default.Settings, "Hilfe & Support" to Icons.Default.HelpOutline)
+    val links = listOf("Bankkonten & Accountable Banking" to Icons.Default.AccountBalanceWallet, "Kunden" to Icons.Default.People, "Angebote" to Icons.Default.RequestQuote, "Produkte & Dienstleistungen" to Icons.Default.Inventory2, "Dokumente" to Icons.Default.Folder, "Steuer-Assistent" to Icons.Default.AutoAwesome, "Mit Buchhalter teilen" to Icons.Default.Share, "Einstellungen" to Icons.Default.Settings, "Hilfe & Support" to Icons.Default.HelpOutline)
     LazyColumn(contentPadding = PaddingValues(18.dp, 14.dp, 18.dp, 90.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(18.dp)) { Text("Alex Beispiel", fontWeight = FontWeight.Bold, color = Ink, fontSize = 18.sp); Text("Freiberufler · KontoKlar Plus", color = Muted, fontSize = 13.sp) } } }
         item { AppUpdateCard() }

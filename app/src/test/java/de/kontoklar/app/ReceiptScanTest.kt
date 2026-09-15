@@ -3,8 +3,31 @@ package de.kontoklar.app
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.time.LocalDate
 
 class ReceiptScanTest {
+    @Test fun offerNumbersAreSequentialPerYear() {
+        assertEquals("ANG-2026-0003", nextOfferNumber(2026, listOf("ANG-2026-0001", "ANG-2026-0002", "ANG-2025-0009")))
+    }
+
+    @Test fun sentOfferExpiresAndAcceptedOfferDoesNot() {
+        val today = LocalDate.of(2026, 9, 15)
+        assertEquals("Abgelaufen", offerStatus(Offer(customer = "A", description = "B", amountCents = 100, validUntil = "2026-09-14", status = "Versendet"), today))
+        assertEquals("Angenommen", offerStatus(Offer(customer = "A", description = "B", amountCents = 100, validUntil = "2026-09-14", status = "Angenommen"), today))
+    }
+
+    @Test fun acceptedOfferConvertsWithCustomerAndAmountSnapshot() {
+        val offer = Offer(customer = "Mira", description = "Design", amountCents = 12345, customerId = "customer-1", customerAddress = "Berlin", customerEmail = "mira@example.com")
+        val invoice = offer.toInvoice("RE-2026-0001", 21)
+        assertEquals("Mira", invoice.customer)
+        assertEquals("Design", invoice.description)
+        assertEquals(12345L, invoice.amountCents)
+        assertEquals("customer-1", invoice.customerId)
+        assertEquals("Berlin", invoice.customerAddress)
+        assertEquals("mira@example.com", invoice.customerEmail)
+        assertEquals(LocalDate.now().plusDays(21).toString(), invoice.dueDate)
+    }
+
     @Test fun customerAddressIsFormattedForInvoiceUse() {
         assertEquals("Hauptstraße 4\n10115 Berlin", Customer(name = "Mira", street = "Hauptstraße 4", postalCode = "10115", city = "Berlin").postalAddress)
         assertEquals("Berlin", Customer(name = "Mira", city = "Berlin").postalAddress)

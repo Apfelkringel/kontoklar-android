@@ -20,6 +20,35 @@ data class Invoice(
     val status: String = "Entwurf"
 )
 
+data class Offer(
+    val id: String = UUID.randomUUID().toString(),
+    val number: String = "",
+    val customer: String,
+    val description: String,
+    val amountCents: Long,
+    val customerId: String? = null,
+    val customerAddress: String = "",
+    val customerEmail: String = "",
+    val date: String = LocalDate.now().toString(),
+    val validUntil: String = LocalDate.now().plusDays(30).toString(),
+    val status: String = "Entwurf",
+    val convertedInvoiceId: String? = null
+)
+
+fun offerStatus(offer: Offer, today: LocalDate = LocalDate.now()): String =
+    if (offer.status == "Versendet" && runCatching { LocalDate.parse(offer.validUntil).isBefore(today) }.getOrDefault(false)) "Abgelaufen" else offer.status
+
+fun Offer.toInvoice(number: String, paymentTermsDays: Int): Invoice = Invoice(
+    number = number,
+    customer = customer,
+    description = description,
+    amountCents = amountCents,
+    customerId = customerId,
+    customerAddress = customerAddress,
+    customerEmail = customerEmail,
+    dueDate = LocalDate.now().plusDays(paymentTermsDays.coerceIn(1, 90).toLong()).toString()
+)
+
 data class Customer(
     val id: String = UUID.randomUUID().toString(),
     val name: String = "",
@@ -60,9 +89,12 @@ class LocalData(context: Context) {
 
     fun invoices(): List<Invoice> = read("invoices") { Invoice(id = it.optString("id", UUID.randomUUID().toString()), number = it.optString("number", ""), customer = it.optString("customer", ""), description = it.optString("description", ""), amountCents = it.optLong("amountCents", 0), customerId = it.optString("customerId").takeIf(String::isNotBlank), customerAddress = it.optString("customerAddress"), customerEmail = it.optString("customerEmail"), date = it.optString("date", ""), dueDate = it.optString("dueDate", ""), status = it.optString("status", "Entwurf")) }
 
+    fun offers(): List<Offer> = read("offers") { Offer(id = it.optString("id", UUID.randomUUID().toString()), number = it.optString("number"), customer = it.optString("customer"), description = it.optString("description"), amountCents = it.optLong("amountCents"), customerId = it.optString("customerId").takeIf(String::isNotBlank), customerAddress = it.optString("customerAddress"), customerEmail = it.optString("customerEmail"), date = it.optString("date"), validUntil = it.optString("validUntil"), status = it.optString("status", "Entwurf"), convertedInvoiceId = it.optString("convertedInvoiceId").takeIf(String::isNotBlank)) }
+
     fun expenses(): List<Expense> = read("expenses") { Expense(id = it.optString("id", UUID.randomUUID().toString()), merchant = it.optString("merchant", ""), category = it.optString("category", "Sonstiges"), amountCents = it.optLong("amountCents", 0), date = it.optString("date", ""), note = it.optString("note", ""), receiptUri = it.optString("receiptUri").takeIf(String::isNotBlank)) }
 
     fun saveInvoices(values: List<Invoice>) = write("invoices", values.map { JSONObject().put("id", it.id).put("number", it.number).put("customer", it.customer).put("customerId", it.customerId).put("customerAddress", it.customerAddress).put("customerEmail", it.customerEmail).put("description", it.description).put("amountCents", it.amountCents).put("date", it.date).put("dueDate", it.dueDate).put("status", it.status) })
+    fun saveOffers(values: List<Offer>) = write("offers", values.map { JSONObject().put("id", it.id).put("number", it.number).put("customer", it.customer).put("customerId", it.customerId).put("customerAddress", it.customerAddress).put("customerEmail", it.customerEmail).put("description", it.description).put("amountCents", it.amountCents).put("date", it.date).put("validUntil", it.validUntil).put("status", it.status).put("convertedInvoiceId", it.convertedInvoiceId) })
     fun saveExpenses(values: List<Expense>) = write("expenses", values.map { JSONObject().put("id", it.id).put("merchant", it.merchant).put("category", it.category).put("amountCents", it.amountCents).put("date", it.date).put("note", it.note).put("receiptUri", it.receiptUri) })
     fun customers(): List<Customer> = read("customers") { Customer(id = it.optString("id", UUID.randomUUID().toString()), name = it.optString("name"), email = it.optString("email"), street = it.optString("street"), postalCode = it.optString("postalCode"), city = it.optString("city"), taxNumber = it.optString("taxNumber")) }
     fun saveCustomers(values: List<Customer>) = write("customers", values.map { JSONObject().put("id", it.id).put("name", it.name).put("email", it.email).put("street", it.street).put("postalCode", it.postalCode).put("city", it.city).put("taxNumber", it.taxNumber) })
@@ -93,6 +125,8 @@ class LocalData(context: Context) {
         return nextInvoiceNumber(year, invoices().map { it.number }, businessProfile().invoicePrefix)
     }
 
+    fun nextOfferNumber(): String = nextOfferNumber(LocalDate.now().year, offers().map { it.number })
+
     private fun <T> read(key: String, decode: (JSONObject) -> T): List<T> {
         val raw = prefs.getString(key, null) ?: return emptyList()
         return runCatching {
@@ -108,6 +142,12 @@ class LocalData(context: Context) {
 
 fun nextInvoiceNumber(year: Int, existingNumbers: List<String>, invoicePrefix: String = "RE"): String {
     val prefix = "${invoicePrefix.ifBlank { "RE" }}-$year-"
+    val next = existingNumbers.mapNotNull { number -> number.takeIf { it.startsWith(prefix) }?.removePrefix(prefix)?.toIntOrNull() }.maxOrNull()?.plus(1) ?: 1
+    return "$prefix${next.toString().padStart(4, '0')}"
+}
+
+fun nextOfferNumber(year: Int, existingNumbers: List<String>): String {
+    val prefix = "ANG-$year-"
     val next = existingNumbers.mapNotNull { number -> number.takeIf { it.startsWith(prefix) }?.removePrefix(prefix)?.toIntOrNull() }.maxOrNull()?.plus(1) ?: 1
     return "$prefix${next.toString().padStart(4, '0')}"
 }

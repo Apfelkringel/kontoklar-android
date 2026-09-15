@@ -51,4 +51,17 @@ class TaxReportTest {
         assertEquals(10_000L, report.netExpenseCentsWithVatBreakdown)
         assertEquals(1, report.expensesWithoutVatBreakdownCount)
     }
+
+    @Test fun reportsOutputVatOnlyForIssuedInvoicesWithSavedRate() {
+        val invoices = listOf(
+            Invoice(number = "RE-1", customer = "A", description = "Work", amountCents = 11_900, date = "2026-06-01", status = "Versendet", vatRatePercent = 19),
+            Invoice(number = "RE-2", customer = "B", description = "Old work", amountCents = 11_900, date = "2026-06-02", status = "Bezahlt")
+        )
+
+        val report = taxYearReport(2026, invoices, emptyList())
+
+        assertEquals(1_900L, report.documentedOutputVatCents)
+        assertEquals(10_000L, report.netInvoiceCentsWithVatSnapshot)
+        assertEquals(1, report.invoicesWithoutVatRateCount)
+    }
 }

@@ -45,4 +45,13 @@ class XRechnungTest {
         val error = runCatching { XRechnung.create(invoice, profile.copy(businessName = "")) }.exceptionOrNull()
         assertEquals(true, error?.message?.contains("Rechnungsausstellers") == true)
     }
+
+    @Test fun usesTheInvoiceVatSnapshotEvenIfTheBusinessProfileRateChanges() {
+        val savedAtSevenPercent = invoice.copy(amountCents = 10_700, vatRatePercent = 7)
+        val xml = XRechnung.create(savedAtSevenPercent, profile.copy(vatRatePercent = 19))
+
+        assertTrue(xml.contains("<cbc:Percent>7</cbc:Percent>"))
+        assertTrue(xml.contains("<cbc:TaxableAmount currencyID=\"EUR\">100.00</cbc:TaxableAmount>"))
+        assertTrue(xml.contains("<cbc:TaxAmount currencyID=\"EUR\">7.00</cbc:TaxAmount>"))
+    }
 }

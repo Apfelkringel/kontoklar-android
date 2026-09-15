@@ -14,7 +14,7 @@ fun shareBookkeepingCsv(context: Context, invoices: List<Invoice>, expenses: Lis
         writer.write("\uFEFF")
         writer.appendLine(listOf("Typ", "Nummer", "Kunde/Händler", "Beschreibung/Kategorie", "Datum", "Fällig", "Betrag (EUR)", "Status", "Notiz", "Nettobetrag (EUR)", "Ausgewiesene USt./Vorsteuer (EUR)").joinToString(";") { csvField(it) })
         invoices.sortedBy(Invoice::date).forEach { invoice ->
-            writer.appendLine(listOf("Rechnung", invoice.number, invoice.customer, invoice.description, invoice.date, invoice.dueDate, centsAsGermanDecimal(invoice.amountCents), invoice.status, "", "", "").joinToString(";") { csvField(it) })
+            writer.appendLine(invoiceCsvFields(invoice).joinToString(";") { csvField(it) })
         }
         expenses.sortedBy(Expense::date).forEach { expense ->
             writer.appendLine(expenseCsvFields(expense).joinToString(";") { csvField(it) })
@@ -38,6 +38,15 @@ fun shareBookkeepingCsv(context: Context, invoices: List<Invoice>, expenses: Lis
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
     context.startActivity(Intent.createChooser(shareIntent, "Buchungen teilen"))
+}
+
+internal fun invoiceCsvFields(invoice: Invoice): List<String> {
+    val amounts = invoice.vatRatePercent?.let { invoiceAmountBreakdown(invoice.amountCents, it) }
+    return listOf(
+        "Rechnung", invoice.number, invoice.customer, invoice.description, invoice.date, invoice.dueDate,
+        centsAsGermanDecimal(invoice.amountCents), invoice.status, "",
+        amounts?.netCents?.let(::centsAsGermanDecimal).orEmpty(), amounts?.vatCents?.let(::centsAsGermanDecimal).orEmpty()
+    )
 }
 
 internal fun expenseCsvFields(expense: Expense): List<String> {

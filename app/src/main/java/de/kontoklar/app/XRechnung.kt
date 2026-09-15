@@ -19,7 +19,8 @@ object XRechnung {
         if (profile.contactName.isBlank()) add("Name der Kontaktperson fehlt.")
         if (profile.phone.isBlank()) add("Telefonnummer der Kontaktperson fehlt.")
         if (!validGermanIban(profile.iban)) add("Eine gültige deutsche IBAN für Zahlungsanweisungen fehlt.")
-        if (profile.vatRatePercent !in 1..27) add("Für diesen Export muss ein Umsatzsteuersatz von 1–27 % hinterlegt sein; steuerfreie Sonderfälle werden noch nicht unterstützt.")
+        val invoiceVatRate = invoice.vatRatePercent ?: profile.vatRatePercent
+        if (invoiceVatRate !in 1..27) add("Für diesen Export muss ein Umsatzsteuersatz von 1–27 % auf der Rechnung hinterlegt sein; steuerfreie Sonderfälle werden noch nicht unterstützt.")
     }
 
     fun create(invoice: Invoice, profile: BusinessProfile): String {
@@ -29,8 +30,10 @@ object XRechnung {
         val street = address.first()
         val postal = address.last().split(Regex("\\s+"), limit = 2)
         require(postal.size == 2) { "Kundenanschrift muss in der zweiten Zeile PLZ und Ort enthalten." }
-        val net = (invoice.amountCents * 100L + (100 + profile.vatRatePercent) / 2) / (100 + profile.vatRatePercent)
-        val tax = invoice.amountCents - net
+        val invoiceVatRate = invoice.vatRatePercent ?: profile.vatRatePercent
+        val amounts = invoiceAmountBreakdown(invoice.amountCents, invoiceVatRate)
+        val net = amounts.netCents
+        val tax = amounts.vatCents
         fun money(cents: Long) = "%d.%02d".format(java.util.Locale.US, cents / 100, cents % 100)
         fun x(value: String) = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&apos;")
         fun tag(name: String, value: String) = "<$name>${x(value)}</$name>"
@@ -57,9 +60,9 @@ ${addressXml(profile.street, profile.postalCode, profile.city)}
 ${addressXml(street, postal[0], postal[1])}<cac:PartyLegalEntity>${tag("cbc:RegistrationName", invoice.customer)}</cac:PartyLegalEntity></cac:Party></cac:AccountingCustomerParty>
 <cac:PaymentMeans>${tag("cbc:PaymentMeansCode", "58")}<cac:PayeeFinancialAccount>${tag("cbc:ID", profile.iban.replace(" ", ""))}</cac:PayeeFinancialAccount></cac:PaymentMeans>
 <cac:PaymentTerms>${tag("cbc:Note", "Zahlbar bis ${invoice.dueDate}.")}</cac:PaymentTerms>
-<cac:TaxTotal><cbc:TaxAmount currencyID="EUR">${money(tax)}</cbc:TaxAmount><cac:TaxSubtotal><cbc:TaxableAmount currencyID="EUR">${money(net)}</cbc:TaxableAmount><cbc:TaxAmount currencyID="EUR">${money(tax)}</cbc:TaxAmount><cac:TaxCategory>${tag("cbc:ID", "S")}${tag("cbc:Percent", profile.vatRatePercent.toString())}<cac:TaxScheme>${tag("cbc:ID", "VAT")}</cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal></cac:TaxTotal>
+<cac:TaxTotal><cbc:TaxAmount currencyID="EUR">${money(tax)}</cbc:TaxAmount><cac:TaxSubtotal><cbc:TaxableAmount currencyID="EUR">${money(net)}</cbc:TaxableAmount><cbc:TaxAmount currencyID="EUR">${money(tax)}</cbc:TaxAmount><cac:TaxCategory>${tag("cbc:ID", "S")}${tag("cbc:Percent", invoiceVatRate.toString())}<cac:TaxScheme>${tag("cbc:ID", "VAT")}</cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal></cac:TaxTotal>
 <cac:LegalMonetaryTotal><cbc:LineExtensionAmount currencyID="EUR">${money(net)}</cbc:LineExtensionAmount><cbc:TaxExclusiveAmount currencyID="EUR">${money(net)}</cbc:TaxExclusiveAmount><cbc:TaxInclusiveAmount currencyID="EUR">${money(invoice.amountCents)}</cbc:TaxInclusiveAmount><cbc:PayableAmount currencyID="EUR">${money(invoice.amountCents)}</cbc:PayableAmount></cac:LegalMonetaryTotal>
-<cac:InvoiceLine><cbc:ID>1</cbc:ID><cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity><cbc:LineExtensionAmount currencyID="EUR">${money(net)}</cbc:LineExtensionAmount><cac:InvoicePeriod>${tag("cbc:StartDate", invoice.serviceDate)}${tag("cbc:EndDate", invoice.serviceDate)}</cac:InvoicePeriod><cac:Item>${tag("cbc:Name", invoice.description)}<cac:ClassifiedTaxCategory>${tag("cbc:ID", "S")}${tag("cbc:Percent", profile.vatRatePercent.toString())}<cac:TaxScheme>${tag("cbc:ID", "VAT")}</cac:TaxScheme></cac:ClassifiedTaxCategory></cac:Item><cac:Price><cbc:PriceAmount currencyID="EUR">${money(net)}</cbc:PriceAmount></cac:Price></cac:InvoiceLine>
+<cac:InvoiceLine><cbc:ID>1</cbc:ID><cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity><cbc:LineExtensionAmount currencyID="EUR">${money(net)}</cbc:LineExtensionAmount><cac:InvoicePeriod>${tag("cbc:StartDate", invoice.serviceDate)}${tag("cbc:EndDate", invoice.serviceDate)}</cac:InvoicePeriod><cac:Item>${tag("cbc:Name", invoice.description)}<cac:ClassifiedTaxCategory>${tag("cbc:ID", "S")}${tag("cbc:Percent", invoiceVatRate.toString())}<cac:TaxScheme>${tag("cbc:ID", "VAT")}</cac:TaxScheme></cac:ClassifiedTaxCategory></cac:Item><cac:Price><cbc:PriceAmount currencyID="EUR">${money(net)}</cbc:PriceAmount></cac:Price></cac:InvoiceLine>
 </ubl:Invoice>""".trimIndent()
     }
 }

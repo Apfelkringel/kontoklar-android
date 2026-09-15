@@ -377,7 +377,7 @@ private fun KontoKlarApp() {
             onReject = { offer -> offers = offers.map { if (it.id == offer.id) it.copy(status = "Abgelehnt") else it }; store.saveOffers(offers); toast = "Angebot abgelehnt" },
             onConvert = { offer ->
                 if (offer.status == "Angenommen" && offer.convertedInvoiceId == null) {
-                    val invoice = offer.toInvoice(store.nextInvoiceNumber(), profile.paymentTermsDays)
+                    val invoice = offer.toInvoice(store.nextInvoiceNumber(), profile.paymentTermsDays, profile.vatRatePercent)
                     invoices = listOf(invoice) + invoices
                     store.saveInvoices(invoices)
                     offers = offers.map { if (it.id == offer.id) it.copy(status = "Abgerechnet", convertedInvoiceId = invoice.id) else it }
@@ -637,6 +637,10 @@ private fun TaxScreen(invoices: List<Invoice>, expenses: List<Expense>, onAction
                     Text("Abzüglich erfasster Ausgaben: ${formatEuro(report.expenseCents)}", color = Color.White.copy(alpha = .9f), fontSize = 13.sp)
                     Text("Differenz der erfassten Bruttobeträge: ${formatEuro(report.recordedDifferenceCents)}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(8.dp))
+                    Text("USt. laut Rechnungen mit gespeichertem Satz: ${formatEuro(report.documentedOutputVatCents)}", color = Color.White, fontSize = 13.sp)
+                    Text("Netto-Rechnungsbetrag mit gespeichertem Satz: ${formatEuro(report.netInvoiceCentsWithVatSnapshot)}", color = Color.White.copy(alpha = .9f), fontSize = 12.sp)
+                    Text("Ohne gespeicherten Rechnungssatz: ${report.invoicesWithoutVatRateCount} Rechnungen", color = Color.White.copy(alpha = .9f), fontSize = 12.sp)
+                    Spacer(Modifier.height(8.dp))
                     Text("Ausgewiesene Vorsteuer laut Belegen: ${formatEuro(report.documentedInputVatCents)}", color = Color.White, fontSize = 13.sp)
                     Text("Nettoausgaben (nur Belege mit Steueraufschlüsselung): ${formatEuro(report.netExpenseCentsWithVatBreakdown)}", color = Color.White.copy(alpha = .9f), fontSize = 12.sp)
                     Text("Ohne erfasste USt.-Aufschlüsselung: ${report.expensesWithoutVatBreakdownCount} Ausgaben", color = Color.White.copy(alpha = .9f), fontSize = 12.sp)
@@ -853,6 +857,10 @@ private fun InvoiceDetailsDialog(
                 Text(invoice.customer, color = Ink, fontWeight = FontWeight.SemiBold)
                 Text(invoice.description, color = Muted)
                 Text("Betrag: ${formatEuro(invoice.amountCents)}", color = Ink)
+                invoice.vatRatePercent?.let { rate ->
+                    val amounts = invoiceAmountBreakdown(invoice.amountCents, rate)
+                    Text("USt.-Satz bei Erstellung: $rate % · Netto ${formatEuro(amounts.netCents)} · USt. ${formatEuro(amounts.vatCents)}", color = Muted, fontSize = 12.sp)
+                } ?: Text("Kein Steuersatz-Snapshot (Altbestand)", color = Muted, fontSize = 12.sp)
                 Text("Datum: ${invoice.date} · fällig: ${invoice.dueDate}", color = Muted, fontSize = 12.sp)
                 Text("Status: ${invoice.status}", color = Forest, fontWeight = FontWeight.SemiBold)
                 Text("Das PDF wird ausdrücklich als unvollständiger Entwurf gekennzeichnet.", color = Muted, fontSize = 11.sp)
@@ -1144,7 +1152,8 @@ private fun ActionDialog(
                             amountCents = cents,
                             date = invoiceDate,
                             serviceDate = serviceDate,
-                            dueDate = invoiceDueDate
+                            dueDate = invoiceDueDate,
+                            vatRatePercent = existingInvoice?.vatRatePercent ?: profile.vatRatePercent
                         )
                     )
                     isExpense -> onCreateExpense(

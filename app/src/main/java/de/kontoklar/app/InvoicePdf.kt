@@ -21,7 +21,8 @@ fun shareInvoiceDraft(context: Context, invoice: Invoice, profile: BusinessProfi
         val title = Paint(normal).apply { typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD); textSize = 22f }
         val heading = Paint(normal).apply { typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD); textSize = 15f }
         val green = Paint(heading).apply { color = android.graphics.Color.rgb(23, 107, 82) }
-        val amounts = invoiceAmountBreakdown(invoice.amountCents, profile.vatRatePercent)
+        val vatRatePercent = invoice.vatRatePercent ?: profile.vatRatePercent
+        val amounts = invoiceAmountBreakdown(invoice.amountCents, vatRatePercent)
         canvas.drawText(profile.businessName.ifBlank { "KontoKlar" }.take(45), 42f, 54f, green)
         canvas.drawText("RECHNUNGSENTWURF", 42f, 105f, title)
         canvas.drawText(invoice.number.ifBlank { "Rechnungsnummer nicht vergeben" }, 42f, 128f, muted)
@@ -64,7 +65,7 @@ fun shareInvoiceDraft(context: Context, invoice: Invoice, profile: BusinessProfi
         y += 23f
         canvas.drawText("Nettobetrag", 370f, y, normal); canvas.drawText(formatEuro(amounts.netCents), 480f, y, normal)
         y += 19f
-        canvas.drawText("Umsatzsteuer (${profile.vatRatePercent} %)", 370f, y, normal); canvas.drawText(formatEuro(amounts.vatCents), 480f, y, normal)
+        canvas.drawText("Umsatzsteuer ($vatRatePercent %)", 370f, y, normal); canvas.drawText(formatEuro(amounts.vatCents), 480f, y, normal)
         y += 24f
         canvas.drawText("Gesamtbetrag", 370f, y, heading); canvas.drawText(formatEuro(amounts.grossCents), 480f, y, heading)
         if (profile.iban.isNotBlank()) {
@@ -73,7 +74,7 @@ fun shareInvoiceDraft(context: Context, invoice: Invoice, profile: BusinessProfi
             canvas.drawText("IBAN: ${profile.iban}", 42f, y + 19f, normal)
             if (profile.businessName.isNotBlank()) canvas.drawText("Empfänger: ${profile.businessName.take(55)}", 42f, y + 37f, normal)
         }
-        canvas.drawText("Entwurf: Angaben prüfen und vor Versand ergänzen. Nicht als fertige Rechnung verwenden.", 42f, 785f, muted)
+        canvas.drawText(if (invoice.vatRatePercent == null) "Altentwurf: aktueller Profilsatz verwendet – Steuersatz prüfen." else "Entwurf: Angaben prüfen und vor Versand ergänzen. Nicht als fertige Rechnung verwenden.", 42f, 785f, muted)
         canvas.drawText("KontoKlar · Arbeitsdokument", 42f, 805f, muted)
         document.finishPage(page)
         FileOutputStream(file).use(document::writeTo)

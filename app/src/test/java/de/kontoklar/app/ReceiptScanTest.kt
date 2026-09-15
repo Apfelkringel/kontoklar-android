@@ -50,7 +50,7 @@ class ReceiptScanTest {
 
     @Test fun acceptedOfferConvertsWithCustomerAndAmountSnapshot() {
         val offer = Offer(customer = "Mira", description = "Design", amountCents = 12345, customerId = "customer-1", customerAddress = "Berlin", customerEmail = "mira@example.com")
-        val invoice = offer.toInvoice("RE-2026-0001", 21)
+        val invoice = offer.toInvoice("RE-2026-0001", 21, vatRatePercent = 19)
         assertEquals("Mira", invoice.customer)
         assertEquals("Design", invoice.description)
         assertEquals(12345L, invoice.amountCents)
@@ -58,6 +58,7 @@ class ReceiptScanTest {
         assertEquals("Berlin", invoice.customerAddress)
         assertEquals("mira@example.com", invoice.customerEmail)
         assertEquals(LocalDate.now().plusDays(21).toString(), invoice.dueDate)
+        assertEquals(19, invoice.vatRatePercent)
     }
 
     @Test fun customerAddressIsFormattedForInvoiceUse() {

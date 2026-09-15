@@ -715,10 +715,12 @@ private fun AppUpdateCard() {
             scope.launch {
                 runCatching {
                     val apk = downloadVerifiedApk(context.cacheDir, latest)
+                    verifyUpdateApk(context, apk)
                     val apkUri = FileProvider.getUriForFile(context, "${context.packageName}.files", apk)
-                    val installIntent = Intent(Intent.ACTION_VIEW)
+                    val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE)
                         .setDataAndType(apkUri, "application/vnd.android.package-archive")
                         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    check(installIntent.resolveActivity(context.packageManager) != null) { "Auf diesem Gerät wurde kein Android-Paketinstaller gefunden." }
                     context.startActivity(installIntent)
                     installerOpened = true
                 }.onFailure { failure ->

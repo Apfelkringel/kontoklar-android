@@ -1,5 +1,9 @@
 package de.kontoklar.app
 
+import android.content.Context
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -91,4 +95,57 @@ fun isNewerVersion(remote: String, local: String): Boolean {
         if (comparison != 0) return comparison > 0
     }
     return false
+}
+
+internal fun isInstallablePackageUpdate(
+    installedPackage: String?,
+    installedVersionCode: Long,
+    candidatePackage: String?,
+    candidateVersionCode: Long
+): Boolean = installedPackage != null && installedPackage == candidatePackage && candidateVersionCode > installedVersionCode
+
+internal fun sameSigningCertificates(installed: Set<String>, candidate: Set<String>): Boolean =
+    installed.isNotEmpty() && installed == candidate
+
+/** Check the APK's Android package metadata and signing identity before handing it to the installer. */
+fun verifyUpdateApk(context: Context, apk: File) {
+    val packageManager = context.packageManager
+    val installedInfo = packageManager.getPackageInfoCompat(context.packageName)
+    val candidateInfo = packageManager.getPackageArchiveInfoCompat(apk.absolutePath)
+        ?: error("Die heruntergeladene Datei ist kein gültiges Android-Installationspaket.")
+
+    require(isInstallablePackageUpdate(
+        installedPackage = installedInfo.packageName,
+        installedVersionCode = installedInfo.longVersionCodeCompat(),
+        candidatePackage = candidateInfo.packageName,
+        candidateVersionCode = candidateInfo.longVersionCodeCompat()
+    )) { "Das APK gehört nicht zu KontoKlar oder ist keine neuere Version." }
+
+    val installedCertificates = installedInfo.signingCertificates()
+    val candidateCertificates = candidateInfo.signingCertificates()
+    require(sameSigningCertificates(installedCertificates, candidateCertificates)) {
+        "Der Signaturschlüssel des Updates passt nicht zu dieser Installation. Es wurde nichts installiert."
+    }
+}
+
+@Suppress("DEPRECATION")
+private fun PackageManager.getPackageInfoCompat(packageName: String): PackageInfo =
+    if (Build.VERSION.SDK_INT >= 33) getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong()))
+    else getPackageInfo(packageName, if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES)
+
+@Suppress("DEPRECATION")
+private fun PackageManager.getPackageArchiveInfoCompat(path: String): PackageInfo? =
+    if (Build.VERSION.SDK_INT >= 33) getPackageArchiveInfo(path, PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong()))
+    else getPackageArchiveInfo(path, if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES)
+
+@Suppress("DEPRECATION")
+private fun PackageInfo.longVersionCodeCompat(): Long =
+    if (Build.VERSION.SDK_INT >= 28) longVersionCode else versionCode.toLong()
+
+@Suppress("DEPRECATION")
+private fun PackageInfo.signingCertificates(): Set<String> {
+    val signatures = if (Build.VERSION.SDK_INT >= 28) signingInfo?.apkContentsSigners else signatures
+    return signatures.orEmpty().mapTo(linkedSetOf()) { signature ->
+        MessageDigest.getInstance("SHA-256").digest(signature.toByteArray()).joinToString("") { byte -> "%02x".format(byte) }
+    }
 }

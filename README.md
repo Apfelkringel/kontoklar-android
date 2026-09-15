@@ -7,6 +7,7 @@ Native Android app prototype built with Kotlin and Jetpack Compose. The app uses
 - Dashboard with totals derived from locally saved invoices and expenses.
 - Create invoice drafts with customer, description, amount, and a 14-day due date.
 - Sequential invoice draft numbers, locally persisted invoice states (draft/sent/paid), PDF draft generation, and Android share sheet.
+- Local business profile settings for sender identity/address, optional tax identifiers, invoice prefix, payment term, and a stored VAT rate. The prefix and payment term are applied to newly created invoice drafts; VAT is not calculated or printed as a legal invoice tax breakdown.
 - Manually record expenses with merchant, amount, category, date, and note.
 - Attach a local image or PDF receipt to an expense.
 - Persist those records locally with Android SharedPreferences.

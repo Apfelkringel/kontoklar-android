@@ -17,6 +17,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -30,6 +32,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.time.LocalDate
 
 private val Ink = Color(0xFF172823)
 private val Forest = Color(0xFF176B52)
@@ -60,6 +63,7 @@ private fun KontoKlarApp() {
     val store = remember { LocalData(context) }
     var invoices by remember { mutableStateOf(store.invoices()) }
     var expenses by remember { mutableStateOf(store.expenses()) }
+    var profile by remember { mutableStateOf(store.businessProfile()) }
     var selectedInvoice by remember { mutableStateOf<Invoice?>(null) }
     var page by remember { mutableStateOf(Page.Home) }
     var dialog by remember { mutableStateOf<String?>(null) }
@@ -98,7 +102,10 @@ private fun KontoKlarApp() {
                 Page.Invoices -> InvoiceScreen(invoices, onAction = { dialog = it }, onSelect = { selectedInvoice = it })
                 Page.Expenses -> ExpenseScreen(expenses, onAction = { dialog = it })
                 Page.Taxes -> TaxScreen(onAction = { dialog = it })
-                Page.More -> MoreScreen(onAction = { toast = "$it – wird eingerichtet" })
+                Page.More -> MoreScreen(onAction = { action ->
+                    if (action == "Einstellungen" || action == "Unternehmensprofil") dialog = "Unternehmensprofil"
+                    else toast = "$action – wird eingerichtet"
+                })
             }
         }
         if (dialog != null) ActionDialog(
@@ -106,7 +113,9 @@ private fun KontoKlarApp() {
             onDismiss = { dialog = null },
             onSave = { toast = it; dialog = null },
             onCreateInvoice = { invoice -> invoices = listOf(invoice.copy(number = store.nextInvoiceNumber()) ) + invoices; store.saveInvoices(invoices); toast = "Rechnungsentwurf gespeichert"; dialog = null },
-            onCreateExpense = { expense -> expenses = listOf(expense) + expenses; store.saveExpenses(expenses); toast = "Ausgabe gespeichert"; dialog = null }
+            onCreateExpense = { expense -> expenses = listOf(expense) + expenses; store.saveExpenses(expenses); toast = "Ausgabe gespeichert"; dialog = null },
+            profile = profile,
+            onSaveProfile = { updated -> profile = updated; store.saveBusinessProfile(updated); toast = "Unternehmensprofil gespeichert"; dialog = null }
         )
         selectedInvoice?.let { invoice ->
             InvoiceDetailsDialog(
@@ -403,7 +412,9 @@ private fun ActionDialog(
     onDismiss: () -> Unit,
     onSave: (String) -> Unit,
     onCreateInvoice: (Invoice) -> Unit,
-    onCreateExpense: (Expense) -> Unit
+    onCreateExpense: (Expense) -> Unit,
+    profile: BusinessProfile,
+    onSaveProfile: (BusinessProfile) -> Unit
 ) {
     var customer by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
@@ -414,8 +425,18 @@ private fun ActionDialog(
     var error by remember { mutableStateOf<String?>(null) }
     var categoryExpanded by remember { mutableStateOf(false) }
     var receiptUri by remember { mutableStateOf<String?>(null) }
+    var businessName by remember { mutableStateOf(profile.businessName) }
+    var street by remember { mutableStateOf(profile.street) }
+    var postalCode by remember { mutableStateOf(profile.postalCode) }
+    var city by remember { mutableStateOf(profile.city) }
+    var taxNumber by remember { mutableStateOf(profile.taxNumber) }
+    var vatId by remember { mutableStateOf(profile.vatId) }
+    var invoicePrefix by remember { mutableStateOf(profile.invoicePrefix) }
+    var paymentTermsDays by remember { mutableStateOf(profile.paymentTermsDays.toString()) }
+    var vatRatePercent by remember { mutableStateOf(profile.vatRatePercent.toString()) }
     val isInvoice = title.contains("Rechnung", true)
     val isExpense = title.contains("Beleg", true) || title.contains("Ausgabe", true)
+    val isProfile = title == "Unternehmensprofil"
     val context = LocalContext.current
     val documentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -427,12 +448,28 @@ private fun ActionDialog(
         onDismissRequest = onDismiss,
         title = { Text(title, color = Ink, fontWeight = FontWeight.Bold) },
         text = {
-            Column(Modifier.heightIn(max = 430.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (isInvoice) {
+            Column(Modifier.heightIn(max = 430.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (isProfile) {
+                    Text("Diese Angaben bleiben auf diesem Gerät. Prüfe Pflichtangaben vor dem Versand deiner Rechnungen.", color = Muted, fontSize = 12.sp)
+                    OutlinedTextField(businessName, { businessName = it }, label = { Text("Name / Unternehmen") }, singleLine = true)
+                    OutlinedTextField(street, { street = it }, label = { Text("Straße und Hausnummer") }, singleLine = true)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(postalCode, { postalCode = it }, label = { Text("PLZ") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(city, { city = it }, label = { Text("Ort") }, modifier = Modifier.weight(2f), singleLine = true)
+                    }
+                    OutlinedTextField(taxNumber, { taxNumber = it }, label = { Text("Steuernummer (optional)") }, singleLine = true)
+                    OutlinedTextField(vatId, { vatId = it }, label = { Text("USt-IdNr. (optional)") }, singleLine = true)
+                    OutlinedTextField(invoicePrefix, { invoicePrefix = it.take(12) }, label = { Text("Rechnungsnummer-Präfix") }, singleLine = true)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(paymentTermsDays, { paymentTermsDays = it.filter(Char::isDigit).take(2) }, label = { Text("Zahlungsziel (Tage)") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(vatRatePercent, { vatRatePercent = it.filter(Char::isDigit).take(2) }, label = { Text("USt.-Satz (%)") }, modifier = Modifier.weight(1f), singleLine = true)
+                    }
+                    Text("Der USt.-Satz wird aktuell nur gespeichert, nicht in Steuerbeträge oder ein rechtsgültiges Rechnungsdokument übernommen.", color = Muted, fontSize = 11.sp)
+                } else if (isInvoice) {
                     OutlinedTextField(customer, { customer = it; error = null }, label = { Text("Kunde / Rechnungsempfänger") }, singleLine = true)
                     OutlinedTextField(description, { description = it }, label = { Text("Leistung / Beschreibung") }, singleLine = true)
                     OutlinedTextField(amount, { amount = it; error = null }, label = { Text("Betrag inkl. USt. (€)") }, singleLine = true)
-                    Text("Zahlungsziel: 14 Tage · USt.-Satz und Rechnungsnummer in Einstellungen konfigurierbar.", color = Muted, fontSize = 11.sp)
+                    Text("Zahlungsziel: ${profile.paymentTermsDays} Tage · Nummernpräfix: ${profile.invoicePrefix}", color = Muted, fontSize = 11.sp)
                 } else if (isExpense) {
                     OutlinedTextField(merchant, { merchant = it; error = null }, label = { Text("Händler / Lieferant") }, singleLine = true)
                     OutlinedTextField(amount, { amount = it; error = null }, label = { Text("Betrag (€)") }, singleLine = true)
@@ -460,15 +497,18 @@ private fun ActionDialog(
             TextButton(onClick = {
                 val cents = parseEuroCents(amount)
                 when {
+                    isProfile && invoicePrefix.isBlank() -> error = "Bitte gib ein Rechnungsnummer-Präfix an."
+                    isProfile && (paymentTermsDays.toIntOrNull() !in 1..90 || vatRatePercent.toIntOrNull() !in 0..27) -> error = "Zahlungsziel: 1–90 Tage; USt.-Satz: 0–27 %."
+                    isProfile -> onSaveProfile(BusinessProfile(businessName.trim(), street.trim(), postalCode.trim(), city.trim(), taxNumber.trim(), vatId.trim(), invoicePrefix.trim(), paymentTermsDays.toInt(), vatRatePercent.toInt()))
                     isInvoice && customer.isBlank() -> error = "Bitte gib einen Kunden an."
                     isInvoice && description.isBlank() -> error = "Bitte beschreibe die Leistung."
                     isExpense && merchant.isBlank() -> error = "Bitte gib einen Händler an."
                     cents == null -> error = "Bitte gib einen gültigen positiven Betrag an (z. B. 125,50)."
-                    isInvoice -> onCreateInvoice(Invoice(customer = customer.trim(), description = description.trim(), amountCents = cents))
+                    isInvoice -> onCreateInvoice(Invoice(customer = customer.trim(), description = description.trim(), amountCents = cents, dueDate = LocalDate.now().plusDays(profile.paymentTermsDays.toLong()).toString()))
                     isExpense -> onCreateExpense(Expense(merchant = merchant.trim(), category = category, amountCents = cents, note = note.trim(), receiptUri = receiptUri))
                     else -> onSave("$title geöffnet")
                 }
-            }) { Text(if (isInvoice) "Entwurf speichern" else if (isExpense) "Ausgabe speichern" else "Weiter", color = Forest) }
+        }) { Text(if (isProfile) "Profil speichern" else if (isInvoice) "Entwurf speichern" else if (isExpense) "Ausgabe speichern" else "Weiter", color = Forest) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen", color = Muted) } },
         containerColor = Color.White

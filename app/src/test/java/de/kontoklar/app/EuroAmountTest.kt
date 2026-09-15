@@ -28,5 +28,6 @@ class EuroAmountTest {
     @Test fun invoiceNumbersAreSequentialPerYear() {
         assertEquals("RE-2026-0003", nextInvoiceNumber(2026, listOf("RE-2026-0001", "RE-2025-0100", "RE-2026-0002")))
         assertEquals("RE-2027-0001", nextInvoiceNumber(2027, listOf("RE-2026-0015")))
+        assertEquals("INV-2026-0002", nextInvoiceNumber(2026, listOf("INV-2026-0001", "RE-2026-0009"), "INV"))
     }
 }

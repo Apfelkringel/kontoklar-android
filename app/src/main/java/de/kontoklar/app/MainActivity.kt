@@ -32,6 +32,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.time.LocalDate
 
@@ -66,12 +68,22 @@ private fun KontoKlarApp() {
     var expenses by remember { mutableStateOf(store.expenses()) }
     var customers by remember { mutableStateOf(store.customers()) }
     var offers by remember { mutableStateOf(store.offers()) }
+    var products by remember { mutableStateOf(store.products()) }
     var profile by remember { mutableStateOf(store.businessProfile()) }
     var selectedInvoice by remember { mutableStateOf<Invoice?>(null) }
+    var selectedExpense by remember { mutableStateOf<Expense?>(null) }
+    var expenseToEdit by remember { mutableStateOf<Expense?>(null) }
+    var expenseToDelete by remember { mutableStateOf<Expense?>(null) }
     var page by remember { mutableStateOf(Page.Home) }
     var dialog by remember { mutableStateOf<String?>(null) }
     var toast by remember { mutableStateOf<String?>(null) }
     var customersOpen by remember { mutableStateOf(false) }
+    var productsOpen by remember { mutableStateOf(false) }
+    var productEditorOpen by remember { mutableStateOf(false) }
+    var editingProduct by remember { mutableStateOf(Product(name = "", unitPriceCents = 0)) }
+    var productToDelete by remember { mutableStateOf<Product?>(null) }
+    var documentsOpen by remember { mutableStateOf(false) }
+    var restoreBackupUri by remember { mutableStateOf<Uri?>(null) }
     var customerEditorOpen by remember { mutableStateOf(false) }
     var editingCustomer by remember { mutableStateOf(Customer()) }
     var customerToDelete by remember { mutableStateOf<Customer?>(null) }
@@ -79,6 +91,17 @@ private fun KontoKlarApp() {
     var offerEditorOpen by remember { mutableStateOf(false) }
     var editingOffer by remember { mutableStateOf(Offer(customer = "", description = "", amountCents = 0)) }
     var offerToDelete by remember { mutableStateOf<Offer?>(null) }
+    val scope = rememberCoroutineScope()
+    val backupExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { destination ->
+        if (destination != null) scope.launch {
+            runCatching { withContext(Dispatchers.IO) { exportBackup(context, destination, store) } }
+                .onSuccess { toast = "Sicherung mit ${expenses.size} Ausgaben und ${invoices.size} Rechnungen erstellt" }
+                .onFailure { toast = it.message ?: "Sicherung konnte nicht erstellt werden." }
+        }
+    }
+    val backupImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->
+        if (source != null) restoreBackupUri = source
+    }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(toast) { toast?.let { snackbar.showSnackbar(it); toast = null } }
 
@@ -111,24 +134,44 @@ private fun KontoKlarApp() {
             when (page) {
                 Page.Home -> Dashboard(invoices, expenses, onNavigate = { page = it })
                 Page.Invoices -> InvoiceScreen(invoices, onAction = { dialog = it }, onSelect = { selectedInvoice = it })
-                Page.Expenses -> ExpenseScreen(expenses, onAction = { dialog = it })
-                Page.Taxes -> TaxScreen(onAction = { dialog = it })
+                Page.Expenses -> ExpenseScreen(expenses, onAction = { dialog = it }, onSelect = { selectedExpense = it })
+                Page.Taxes -> TaxScreen(onAction = { action ->
+                    when (action) {
+                        "Steuerberater teilen" -> runCatching { shareBookkeepingCsv(context, invoices, expenses) }
+                            .onFailure { toast = it.message ?: "Export konnte nicht erstellt werden." }
+                        "Steuerprofil" -> dialog = "Unternehmensprofil"
+                        else -> dialog = action
+                    }
+                })
                 Page.More -> MoreScreen(onAction = { action ->
                     if (action == "Einstellungen" || action == "Unternehmensprofil") dialog = "Unternehmensprofil"
                     else if (action == "Kunden") customersOpen = true
                     else if (action == "Angebote") offersOpen = true
+                    else if (action == "Produkte & Dienstleistungen") productsOpen = true
+                    else if (action == "Dokumente") documentsOpen = true
+                    else if (action == "Mit Buchhalter teilen") runCatching { shareBookkeepingCsv(context, invoices, expenses) }
+                        .onFailure { toast = it.message ?: "Export konnte nicht erstellt werden." }
                     else toast = "$action – wird eingerichtet"
                 })
             }
         }
         if (dialog != null) ActionDialog(
             title = dialog!!,
-            onDismiss = { dialog = null },
+            existingExpense = expenseToEdit,
+            onDismiss = { dialog = null; expenseToEdit = null },
             onSave = { toast = it; dialog = null },
             onCreateInvoice = { invoice -> invoices = listOf(invoice.copy(number = store.nextInvoiceNumber()) ) + invoices; store.saveInvoices(invoices); toast = "Rechnungsentwurf gespeichert"; dialog = null },
-            onCreateExpense = { expense -> expenses = listOf(expense) + expenses; store.saveExpenses(expenses); toast = "Ausgabe gespeichert"; dialog = null },
+            onCreateExpense = { expense ->
+                val isEditing = expenses.any { it.id == expense.id }
+                expenses = expenses.upsertExpense(expense)
+                store.saveExpenses(expenses)
+                toast = if (isEditing) "Ausgabe aktualisiert" else "Ausgabe gespeichert"
+                expenseToEdit = null
+                dialog = null
+            },
             profile = profile,
             customers = customers,
+            products = products,
             onSaveProfile = { updated -> profile = updated; store.saveBusinessProfile(updated); toast = "Unternehmensprofil gespeichert"; dialog = null }
         )
         if (customersOpen) CustomerManagerDialog(
@@ -138,6 +181,69 @@ private fun KontoKlarApp() {
             onEdit = { editingCustomer = it; customerEditorOpen = true },
             onDelete = { customerToDelete = it }
         )
+        if (productsOpen) ProductManagerDialog(
+            products = products,
+            onDismiss = { productsOpen = false },
+            onAdd = { editingProduct = Product(name = "", unitPriceCents = 0); productEditorOpen = true },
+            onEdit = { editingProduct = it; productEditorOpen = true },
+            onDelete = { productToDelete = it }
+        )
+        if (productEditorOpen) ProductEditorDialog(
+            product = editingProduct,
+            onDismiss = { productEditorOpen = false },
+            onSave = { saved ->
+                products = products.upsertProduct(saved)
+                store.saveProducts(products)
+                productEditorOpen = false
+                toast = "${saved.name} im Katalog gespeichert"
+            }
+        )
+        productToDelete?.let { product ->
+            AlertDialog(
+                onDismissRequest = { productToDelete = null },
+                title = { Text("Katalogeintrag löschen?") },
+                text = { Text("${product.name} wird aus dem lokalen Produktkatalog entfernt. Bereits erstellte Rechnungen bleiben unverändert.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        products = products.withoutProduct(product.id)
+                        store.saveProducts(products)
+                        productToDelete = null
+                        toast = "Katalogeintrag gelöscht"
+                    }) { Text("Löschen", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = { TextButton(onClick = { productToDelete = null }) { Text("Abbrechen") } }
+            )
+        }
+        if (documentsOpen) DataManagementDialog(
+            onDismiss = { documentsOpen = false },
+            onExport = { documentsOpen = false; backupExportLauncher.launch("KontoKlar-Sicherung-${LocalDate.now()}.zip") },
+            onImport = { documentsOpen = false; backupImportLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed")) }
+        )
+        restoreBackupUri?.let { source ->
+            AlertDialog(
+                onDismissRequest = { restoreBackupUri = null },
+                title = { Text("Sicherung wiederherstellen?") },
+                text = { Text("Die Sicherung ersetzt deine lokalen Rechnungen, Angebote, Kunden, Ausgaben und das Unternehmensprofil. Ein angehängter Beleg wird mit übernommen. Erstelle vorher eine aktuelle Sicherung, wenn du vorhandene Daten behalten möchtest.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        restoreBackupUri = null
+                        scope.launch {
+                            val result = runCatching { withContext(Dispatchers.IO) { restoreBackup(context, source, store) } }
+                            result.onSuccess {
+                                invoices = store.invoices()
+                                expenses = store.expenses()
+                                customers = store.customers()
+                                offers = store.offers()
+                                products = store.products()
+                                profile = store.businessProfile()
+                                toast = "Sicherung erfolgreich wiederhergestellt"
+                            }.onFailure { toast = it.message ?: "Sicherung konnte nicht wiederhergestellt werden." }
+                        }
+                    }) { Text("Wiederherstellen", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = { TextButton(onClick = { restoreBackupUri = null }) { Text("Abbrechen") } }
+            )
+        }
         if (customerEditorOpen) CustomerEditorDialog(
             customer = editingCustomer,
             onDismiss = { customerEditorOpen = false },
@@ -188,6 +294,7 @@ private fun KontoKlarApp() {
         if (offerEditorOpen) OfferEditorDialog(
             offer = editingOffer,
             customers = customers,
+            products = products,
             onDismiss = { offerEditorOpen = false },
             onSave = { saved ->
                 val persisted = if (saved.number.isBlank()) saved.copy(number = store.nextOfferNumber()) else saved
@@ -217,6 +324,37 @@ private fun KontoKlarApp() {
                     selectedInvoice = null
                     toast = "Rechnungsstatus: $status"
                 }
+            )
+        }
+        selectedExpense?.let { expense ->
+            ExpenseDetailsDialog(
+                expense = expense,
+                onDismiss = { selectedExpense = null },
+                onEdit = { expenseToEdit = expense; selectedExpense = null; dialog = "Ausgabe bearbeiten" },
+                onDelete = { expenseToDelete = expense; selectedExpense = null },
+                onOpenReceipt = {
+                    runCatching {
+                        val uri = Uri.parse(expense.receiptUri)
+                        val mimeType = context.contentResolver.getType(uri) ?: if (uri.lastPathSegment?.endsWith(".pdf", true) == true) "application/pdf" else "image/*"
+                        context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                    }.onFailure { toast = "Beleg kann nicht geöffnet werden. Bitte prüfe, ob die Quelldatei noch vorhanden ist." }
+                }
+            )
+        }
+        expenseToDelete?.let { expense ->
+            AlertDialog(
+                onDismissRequest = { expenseToDelete = null },
+                title = { Text("Ausgabe löschen?") },
+                text = { Text("${expense.merchant} · ${formatEuro(expense.amountCents)} wird von diesem Gerät entfernt. Der angehängte Originalbeleg bleibt in der Ablage erhalten.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        expenses = expenses.withoutExpense(expense.id)
+                        store.saveExpenses(expenses)
+                        expenseToDelete = null
+                        toast = "Ausgabe gelöscht"
+                    }) { Text("Löschen", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = { TextButton(onClick = { expenseToDelete = null }) { Text("Abbrechen") } }
             )
         }
     }
@@ -309,13 +447,13 @@ private fun InvoiceScreen(invoices: List<Invoice>, onAction: (String) -> Unit, o
 }
 
 @Composable
-private fun ExpenseScreen(expenses: List<Expense>, onAction: (String) -> Unit) {
+private fun ExpenseScreen(expenses: List<Expense>, onAction: (String) -> Unit, onSelect: (Expense) -> Unit) {
     LazyColumn(contentPadding = PaddingValues(18.dp, 14.dp, 18.dp, 90.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Card(colors = CardDefaults.cardColors(containerColor = Mint), shape = RoundedCornerShape(20.dp)) { Row(Modifier.fillMaxWidth().clickable { onAction("Beleg scannen") }.padding(18.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.DocumentScanner, null, tint = Forest, modifier = Modifier.size(28.dp)); Spacer(Modifier.width(14.dp)); Column { Text("Beleg scannen", color = Ink, fontWeight = FontWeight.Bold); Text("Foto aufnehmen oder Datei auswählen", color = Muted, fontSize = 12.sp) }; Spacer(Modifier.weight(1f)); Icon(Icons.Default.ChevronRight, null, tint = Forest) } } }
-        item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { MetricCard("Ausgaben", formatEuro(expenses.sumOf { it.amountCents }), "${expenses.size} erfasst", Icons.Default.Payments, Modifier.weight(1f)); MetricCard("Noch zu prüfen", "${expenses.size}", "Belege", Icons.Default.ErrorOutline, Modifier.weight(1f)) } }
-        item { SectionTitle("Letzte Ausgaben", "Alle ansehen") }
+        item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { MetricCard("Ausgaben", formatEuro(expenses.sumOf { it.amountCents }), "${expenses.size} erfasst", Icons.Default.Payments, Modifier.weight(1f)); MetricCard("Beleg fehlt", "${expenses.count { it.receiptUri.isNullOrBlank() }}", "Ausgaben", Icons.Default.ErrorOutline, Modifier.weight(1f)) } }
+        item { SectionTitle("Alle Ausgaben", "") }
         if (expenses.isEmpty()) item { EmptyState("Noch keine Ausgaben", "Erfasse einen Beleg oder füge eine Ausgabe hinzu.") }
-        items(expenses, key = { it.id }) { expense -> EntryRow(Entry(expense.merchant, "${expense.category} · ${expense.date}${if (expense.receiptUri != null) " · Beleg angehängt" else ""}", "−${formatEuro(expense.amountCents)}", Icons.Default.Receipt, Color(0xFFFFF1E5)), onClick = { onAction("Ausgabe: ${expense.merchant}") }) }
+        items(expenses, key = { it.id }) { expense -> EntryRow(Entry(expense.merchant, "${expense.category} · ${expense.date}${if (expense.receiptUri != null) " · Beleg angehängt" else " · Beleg fehlt"}", "−${formatEuro(expense.amountCents)}", Icons.Default.Receipt, Color(0xFFFFF1E5)), onClick = { onSelect(expense) }) }
     }
 }
 
@@ -348,6 +486,28 @@ private fun MoreScreen(onAction: (String) -> Unit) {
         item { AppUpdateCard() }
         items(links) { (label, icon) -> Row(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(14.dp)).clickable { onAction(label) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(icon, null, tint = Forest); Spacer(Modifier.width(14.dp)); Text(label, color = Ink, modifier = Modifier.weight(1f)); Icon(Icons.Default.ChevronRight, null, tint = Muted) } }
     }
+}
+
+@Composable
+private fun DataManagementDialog(onDismiss: () -> Unit, onExport: () -> Unit, onImport: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Dokumente & Datensicherung", color = Ink, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Erstelle eine lokale ZIP-Sicherung mit Rechnungen, Angeboten, Kunden, Ausgaben, Profilangaben und angehängten Belegen. Die Datei wird nur am gewählten Speicherort abgelegt. Sie ist nicht verschlüsselt und enthält vertrauliche Geschäfts- und Kundendaten – bewahre sie geschützt auf.", color = Muted, fontSize = 13.sp)
+                Button(onClick = onExport, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Forest)) {
+                    Icon(Icons.Default.Backup, null); Spacer(Modifier.width(8.dp)); Text("Sicherung exportieren")
+                }
+                OutlinedButton(onClick = onImport, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Restore, null); Spacer(Modifier.width(8.dp)); Text("Sicherung wiederherstellen")
+                }
+                Text("Eine Wiederherstellung ersetzt den aktuellen lokalen Datenbestand erst nach deiner Bestätigung.", color = Muted, fontSize = 11.sp)
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Schließen", color = Forest) } },
+        containerColor = Color.White
+    )
 }
 
 @Composable
@@ -524,28 +684,65 @@ private fun InvoiceDetailsDialog(
 }
 
 @Composable
+private fun ExpenseDetailsDialog(
+    expense: Expense,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onOpenReceipt: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(expense.merchant, color = Ink, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text("${expense.category} · ${expense.date}", color = Muted, fontSize = 12.sp)
+                Text(formatEuro(expense.amountCents), color = Ink, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                if (expense.note.isNotBlank()) Text(expense.note, color = Muted)
+                if (!expense.receiptUri.isNullOrBlank()) {
+                    OutlinedButton(onClick = onOpenReceipt, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.AttachFile, null); Spacer(Modifier.width(8.dp)); Text("Angehängten Beleg öffnen")
+                    }
+                } else Text("Zu dieser Ausgabe ist kein Beleg angehängt.", color = Muted, fontSize = 12.sp)
+                OutlinedButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Edit, null); Spacer(Modifier.width(8.dp)); Text("Ausgabe bearbeiten")
+                }
+                TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.colorScheme.error); Spacer(Modifier.width(8.dp)); Text("Ausgabe löschen", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Schließen", color = Forest) } },
+        containerColor = Color.White
+    )
+}
+
+@Composable
 private fun ActionDialog(
     title: String,
+    existingExpense: Expense?,
     onDismiss: () -> Unit,
     onSave: (String) -> Unit,
     onCreateInvoice: (Invoice) -> Unit,
     onCreateExpense: (Expense) -> Unit,
     profile: BusinessProfile,
     customers: List<Customer>,
+    products: List<Product>,
     onSaveProfile: (BusinessProfile) -> Unit
 ) {
     var customer by remember { mutableStateOf("") }
     var selectedCustomer by remember { mutableStateOf<Customer?>(null) }
     var customerMenuExpanded by remember { mutableStateOf(false) }
+    var productMenuExpanded by remember { mutableStateOf(false) }
     var description by remember { mutableStateOf("") }
-    var amount by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf("Sonstiges") }
-    var merchant by remember { mutableStateOf("") }
-    var note by remember { mutableStateOf("") }
+    var amount by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.let { formatEuro(it.amountCents) }.orEmpty()) }
+    var category by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.category ?: "Sonstiges") }
+    var merchant by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.merchant.orEmpty()) }
+    var note by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.note.orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
     var categoryExpanded by remember { mutableStateOf(false) }
-    var receiptUri by remember { mutableStateOf<String?>(null) }
-    var expenseDate by remember { mutableStateOf(LocalDate.now().toString()) }
+    var receiptUri by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.receiptUri) }
+    var expenseDate by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.date ?: LocalDate.now().toString()) }
     var scanStatus by remember { mutableStateOf<String?>(null) }
     var cameraOutputUri by remember { mutableStateOf<Uri?>(null) }
     var businessName by remember { mutableStateOf(profile.businessName) }
@@ -639,6 +836,24 @@ private fun ActionDialog(
                     selectedCustomer?.let { saved ->
                         if (saved.postalAddress.isNotBlank()) Text("Rechnungsanschrift:\n${saved.postalAddress}", color = Muted, fontSize = 11.sp)
                     }
+                    if (products.isNotEmpty()) Box {
+                        OutlinedButton(onClick = { productMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.Inventory2, null); Spacer(Modifier.width(8.dp)); Text("Aus Produktkatalog übernehmen")
+                        }
+                        DropdownMenu(expanded = productMenuExpanded, onDismissRequest = { productMenuExpanded = false }) {
+                            products.forEach { product ->
+                                DropdownMenuItem(
+                                    text = { Column { Text(product.name); Text(formatEuro(product.unitPriceCents), color = Muted, fontSize = 11.sp) } },
+                                    onClick = {
+                                        description = product.description.ifBlank { product.name }
+                                        amount = formatEuro(product.unitPriceCents)
+                                        productMenuExpanded = false
+                                        error = null
+                                    }
+                                )
+                            }
+                        }
+                    }
                     OutlinedTextField(description, { description = it }, label = { Text("Leistung / Beschreibung") }, singleLine = true)
                     OutlinedTextField(amount, { amount = it; error = null }, label = { Text("Betrag inkl. USt. (€)") }, singleLine = true)
                     Text("Zahlungsziel: ${profile.paymentTermsDays} Tage · Nummernpräfix: ${profile.invoicePrefix}", color = Muted, fontSize = 11.sp)
@@ -691,10 +906,13 @@ private fun ActionDialog(
                     isExpense && runCatching { LocalDate.parse(expenseDate) }.isFailure -> error = "Bitte gib ein Datum im Format JJJJ-MM-TT an."
                     cents == null -> error = "Bitte gib einen gültigen positiven Betrag an (z. B. 125,50)."
                     isInvoice -> onCreateInvoice(Invoice(customer = customer.trim(), customerId = selectedCustomer?.id, customerAddress = selectedCustomer?.postalAddress.orEmpty(), customerEmail = selectedCustomer?.email.orEmpty(), description = description.trim(), amountCents = cents, dueDate = LocalDate.now().plusDays(profile.paymentTermsDays.toLong()).toString()))
-                    isExpense -> onCreateExpense(Expense(merchant = merchant.trim(), category = category, amountCents = cents, date = expenseDate, note = note.trim(), receiptUri = receiptUri))
+                    isExpense -> onCreateExpense(
+                        existingExpense?.copy(merchant = merchant.trim(), category = category, amountCents = cents, date = expenseDate, note = note.trim(), receiptUri = receiptUri)
+                            ?: Expense(merchant = merchant.trim(), category = category, amountCents = cents, date = expenseDate, note = note.trim(), receiptUri = receiptUri)
+                    )
                     else -> onSave("$title geöffnet")
                 }
-        }) { Text(if (isProfile) "Profil speichern" else if (isInvoice) "Entwurf speichern" else if (isExpense) "Ausgabe speichern" else "Weiter", color = Forest) }
+        }) { Text(if (isProfile) "Profil speichern" else if (isInvoice) "Entwurf speichern" else if (isExpense && existingExpense != null) "Änderungen speichern" else if (isExpense) "Ausgabe speichern" else "Weiter", color = Forest) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen", color = Muted) } },
         containerColor = Color.White

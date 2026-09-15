@@ -6,6 +6,27 @@ import org.junit.Test
 import java.time.LocalDate
 
 class ReceiptScanTest {
+    @Test fun expenseEditReplacesRecordWithoutDuplicatingAndDeleteRemovesIt() {
+        val original = Expense(id = "expense-1", merchant = "Cafe", category = "Büro", amountCents = 1000)
+        val other = Expense(id = "expense-2", merchant = "Bahn", category = "Reisekosten", amountCents = 2000)
+        val edited = original.copy(merchant = "Café", amountCents = 1250)
+
+        val saved = listOf(original, other).upsertExpense(edited)
+        assertEquals(2, saved.size)
+        assertEquals(edited, saved.first { it.id == original.id })
+        assertEquals(listOf(other), saved.withoutExpense(original.id))
+    }
+
+    @Test fun productCatalogUpdatesAndDeletesByStableId() {
+        val product = Product(id = "product-1", name = "Beratung", unitPriceCents = 15000)
+        val edited = product.copy(name = "Beratung (Stunde)", unitPriceCents = 17500)
+        val saved = listOf(product).upsertProduct(edited)
+
+        assertEquals(1, saved.size)
+        assertEquals(edited, saved.single())
+        assertEquals(emptyList<Product>(), saved.withoutProduct(product.id))
+    }
+
     @Test fun offerNumbersAreSequentialPerYear() {
         assertEquals("ANG-2026-0003", nextOfferNumber(2026, listOf("ANG-2026-0001", "ANG-2026-0002", "ANG-2025-0009")))
     }

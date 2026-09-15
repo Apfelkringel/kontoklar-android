@@ -33,6 +33,13 @@ class EuroAmountTest {
         assertEquals(false, isValidSha256("g".repeat(64)))
     }
 
+    @Test fun csvExportUsesGermanDecimalsEscapesCellsAndNeutralizesFormulas() {
+        assertEquals("\"a;b\"", csvField("a;b"))
+        assertEquals("\"a \"\"quote\"\"\"", csvField("a \"quote\""))
+        assertEquals("\"'=1+1\"", csvField("=1+1"))
+        assertEquals("1234,56", centsAsGermanDecimal(123456))
+    }
+
     @Test fun invoiceNumbersAreSequentialPerYear() {
         assertEquals("RE-2026-0003", nextInvoiceNumber(2026, listOf("RE-2026-0001", "RE-2025-0100", "RE-2026-0002")))
         assertEquals("RE-2027-0001", nextInvoiceNumber(2027, listOf("RE-2026-0015")))

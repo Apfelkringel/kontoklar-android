@@ -8,12 +8,16 @@ Native Android app prototype built with Kotlin and Jetpack Compose. The app uses
 - Create invoice drafts with customer, description, amount, and a 14-day due date.
 - Create local offer drafts, share draft PDFs, track sent/accepted/rejected/expired states, and convert accepted offers to a linked invoice draft once.
 - Maintain a local customer directory with search and editable names, email, billing address, and tax identifier; select a saved customer for new invoices and snapshot those billing details into the invoice draft.
+- Maintain a reusable product and service catalog with saved descriptions and gross prices; apply a catalog entry to new invoices and offers.
 - Sequential invoice draft numbers, locally persisted invoice states (draft/sent/paid), PDF draft generation, and Android share sheet.
 - Local business profile settings for sender identity/address, optional tax identifiers, invoice prefix, payment term, and a stored VAT rate. The prefix and payment term are applied to newly created invoice drafts; VAT is not calculated or printed as a legal invoice tax breakdown.
 - Manually record expenses with merchant, amount, category, date, and note.
-- Attach a local image or PDF receipt to an expense.
+- Edit, inspect, and delete saved expenses; reopen their attached image or PDF receipt.
+- Attach a local image or PDF receipt to an expense; the expense list reports how many receipts are missing.
 - Capture receipt photos through Android's camera app and use bundled, on-device ML Kit OCR to suggest merchant, date, and total. Suggestions remain editable and require user review.
 - Persist those records locally with Android SharedPreferences.
+- Export or restore a ZIP backup containing the local records, profile, and attached receipts; restoring is explicit and replaces the current local data only after confirmation.
+- Share a local invoice/expense CSV through Android's share sheet for bookkeeping handoff; exports are marked as working data, not tax returns.
 - German and dot-decimal Euro input parsing, with unit tests.
 - Navigation for invoices, expenses, tax overview, and account/settings areas.
 - In-app check for the latest public GitHub release, private-cache APK download, SHA-256 verification against the GitHub asset digest, and direct handoff to Android's package installer.
@@ -26,7 +30,7 @@ There is no account/login or cloud sync, bank/PSD2 connection, actual automatic 
 
 ## Publishing an update
 
-Push a version tag such as `v0.8.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
+Push a version tag such as `v0.9.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
 
 ## Build
 

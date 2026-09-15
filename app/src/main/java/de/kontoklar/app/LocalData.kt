@@ -62,6 +62,13 @@ data class Customer(
         .filter(String::isNotBlank).joinToString("\n")
 }
 
+data class Product(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val description: String = "",
+    val unitPriceCents: Long
+)
+
 data class BusinessProfile(
     val businessName: String = "",
     val street: String = "",
@@ -84,8 +91,93 @@ data class Expense(
     val receiptUri: String? = null
 )
 
+fun List<Expense>.upsertExpense(expense: Expense): List<Expense> =
+    if (any { it.id == expense.id }) map { if (it.id == expense.id) expense else it } else listOf(expense) + this
+
+fun List<Expense>.withoutExpense(id: String): List<Expense> = filterNot { it.id == id }
+
+fun List<Product>.upsertProduct(product: Product): List<Product> =
+    if (any { it.id == product.id }) map { if (it.id == product.id) product else it } else listOf(product) + this
+
+fun List<Product>.withoutProduct(id: String): List<Product> = filterNot { it.id == id }
+
 class LocalData(context: Context) {
     private val prefs = context.getSharedPreferences("kontoklar_data_v1", Context.MODE_PRIVATE)
+
+    fun exportSnapshot(): JSONObject = JSONObject()
+        .put("schemaVersion", 1)
+        .put("businessProfile", businessProfileJson(businessProfile()))
+        .put("invoices", storedArray("invoices"))
+        .put("offers", storedArray("offers"))
+        .put("expenses", storedArray("expenses"))
+        .put("customers", storedArray("customers"))
+        .put("products", storedArray("products"))
+
+    fun restoreSnapshot(snapshot: JSONObject) {
+        require(snapshot.optInt("schemaVersion") == 1) { "Diese Sicherungsversion wird nicht unterstützt." }
+        val importedInvoices = decodeArray(snapshot.getJSONArray("invoices"), ::invoiceFromJson)
+        val importedOffers = decodeArray(snapshot.getJSONArray("offers"), ::offerFromJson)
+        val importedExpenses = decodeArray(snapshot.getJSONArray("expenses"), ::expenseFromJson)
+        val importedCustomers = decodeArray(snapshot.getJSONArray("customers"), ::customerFromJson)
+        val importedProducts = decodeArray(snapshot.optJSONArray("products") ?: JSONArray(), ::productFromJson)
+        val importedProfile = businessProfileFromJson(snapshot.getJSONObject("businessProfile"))
+        require(importedInvoices.all { it.amountCents > 0 && it.customer.isNotBlank() && it.description.isNotBlank() }) { "Die Sicherung enthält ungültige Rechnungen." }
+        require(importedOffers.all { it.amountCents > 0 && it.customer.isNotBlank() && it.description.isNotBlank() }) { "Die Sicherung enthält ungültige Angebote." }
+        require(importedExpenses.all { it.amountCents > 0 && it.merchant.isNotBlank() }) { "Die Sicherung enthält ungültige Ausgaben." }
+        require(importedCustomers.all { it.name.isNotBlank() }) { "Die Sicherung enthält ungültige Kundendaten." }
+        require(importedProducts.all { it.name.isNotBlank() && it.unitPriceCents > 0 }) { "Die Sicherung enthält ungültige Produkte oder Dienstleistungen." }
+        require(importedInvoices.map { it.id }.distinct().size == importedInvoices.size && importedInvoices.all { validIsoDate(it.date) && validIsoDate(it.dueDate) }) { "Die Sicherung enthält doppelte Rechnungen oder ungültige Rechnungsdaten." }
+        require(importedOffers.map { it.id }.distinct().size == importedOffers.size && importedOffers.all { validIsoDate(it.date) && validIsoDate(it.validUntil) }) { "Die Sicherung enthält doppelte Angebote oder ungültige Angebotsdaten." }
+        require(importedExpenses.map { it.id }.distinct().size == importedExpenses.size && importedExpenses.all { validIsoDate(it.date) }) { "Die Sicherung enthält doppelte Ausgaben oder ungültige Ausgabedaten." }
+        require(importedCustomers.map { it.id }.distinct().size == importedCustomers.size) { "Die Sicherung enthält doppelte Kunden." }
+        require(importedProducts.map { it.id }.distinct().size == importedProducts.size) { "Die Sicherung enthält doppelte Produkte." }
+
+        check(prefs.edit()
+            .putString("invoices", snapshot.getJSONArray("invoices").toString())
+            .putString("offers", snapshot.getJSONArray("offers").toString())
+            .putString("expenses", snapshot.getJSONArray("expenses").toString())
+            .putString("customers", snapshot.getJSONArray("customers").toString())
+            .putString("products", (snapshot.optJSONArray("products") ?: JSONArray()).toString())
+            .putString("business_profile", businessProfileJson(importedProfile).toString())
+            .commit()) { "Die wiederhergestellten Daten konnten nicht dauerhaft gespeichert werden." }
+    }
+
+    private fun storedArray(key: String): JSONArray = prefs.getString(key, null)?.let(::JSONArray) ?: JSONArray()
+
+    private fun <T> decodeArray(array: JSONArray, decode: (JSONObject) -> T): List<T> =
+        List(array.length()) { decode(array.getJSONObject(it)) }
+
+    private fun invoiceFromJson(it: JSONObject) = Invoice(
+        id = it.optString("id", UUID.randomUUID().toString()), number = it.optString("number", ""),
+        customer = it.optString("customer", ""), description = it.optString("description", ""),
+        amountCents = it.optLong("amountCents", 0), customerId = it.optString("customerId").takeIf(String::isNotBlank),
+        customerAddress = it.optString("customerAddress"), customerEmail = it.optString("customerEmail"),
+        date = it.optString("date"), dueDate = it.optString("dueDate"), status = it.optString("status", "Entwurf")
+    )
+
+    private fun offerFromJson(it: JSONObject) = Offer(
+        id = it.optString("id", UUID.randomUUID().toString()), number = it.optString("number"),
+        customer = it.optString("customer"), description = it.optString("description"), amountCents = it.optLong("amountCents"),
+        customerId = it.optString("customerId").takeIf(String::isNotBlank), customerAddress = it.optString("customerAddress"),
+        customerEmail = it.optString("customerEmail"), date = it.optString("date"), validUntil = it.optString("validUntil"),
+        status = it.optString("status", "Entwurf"), convertedInvoiceId = it.optString("convertedInvoiceId").takeIf(String::isNotBlank)
+    )
+
+    private fun expenseFromJson(it: JSONObject) = Expense(
+        id = it.optString("id", UUID.randomUUID().toString()), merchant = it.optString("merchant", ""),
+        category = it.optString("category", "Sonstiges"), amountCents = it.optLong("amountCents", 0),
+        date = it.optString("date"), note = it.optString("note"), receiptUri = it.optString("receiptUri").takeIf(String::isNotBlank)
+    )
+
+    private fun customerFromJson(it: JSONObject) = Customer(
+        id = it.optString("id", UUID.randomUUID().toString()), name = it.optString("name"), email = it.optString("email"),
+        street = it.optString("street"), postalCode = it.optString("postalCode"), city = it.optString("city"), taxNumber = it.optString("taxNumber")
+    )
+
+    private fun productFromJson(it: JSONObject) = Product(
+        id = it.optString("id", UUID.randomUUID().toString()), name = it.optString("name"),
+        description = it.optString("description"), unitPriceCents = it.optLong("unitPriceCents")
+    )
 
     fun invoices(): List<Invoice> = read("invoices") { Invoice(id = it.optString("id", UUID.randomUUID().toString()), number = it.optString("number", ""), customer = it.optString("customer", ""), description = it.optString("description", ""), amountCents = it.optLong("amountCents", 0), customerId = it.optString("customerId").takeIf(String::isNotBlank), customerAddress = it.optString("customerAddress"), customerEmail = it.optString("customerEmail"), date = it.optString("date", ""), dueDate = it.optString("dueDate", ""), status = it.optString("status", "Entwurf")) }
 
@@ -98,27 +190,33 @@ class LocalData(context: Context) {
     fun saveExpenses(values: List<Expense>) = write("expenses", values.map { JSONObject().put("id", it.id).put("merchant", it.merchant).put("category", it.category).put("amountCents", it.amountCents).put("date", it.date).put("note", it.note).put("receiptUri", it.receiptUri) })
     fun customers(): List<Customer> = read("customers") { Customer(id = it.optString("id", UUID.randomUUID().toString()), name = it.optString("name"), email = it.optString("email"), street = it.optString("street"), postalCode = it.optString("postalCode"), city = it.optString("city"), taxNumber = it.optString("taxNumber")) }
     fun saveCustomers(values: List<Customer>) = write("customers", values.map { JSONObject().put("id", it.id).put("name", it.name).put("email", it.email).put("street", it.street).put("postalCode", it.postalCode).put("city", it.city).put("taxNumber", it.taxNumber) })
+    fun products(): List<Product> = read("products", ::productFromJson)
+    fun saveProducts(values: List<Product>) = write("products", values.map { JSONObject().put("id", it.id).put("name", it.name).put("description", it.description).put("unitPriceCents", it.unitPriceCents) })
 
     fun businessProfile(): BusinessProfile {
         val json = prefs.getString("business_profile", null)?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return BusinessProfile()
-        return BusinessProfile(
-            businessName = json.optString("businessName"), street = json.optString("street"),
-            postalCode = json.optString("postalCode"), city = json.optString("city"),
-            taxNumber = json.optString("taxNumber"), vatId = json.optString("vatId"),
-            invoicePrefix = json.optString("invoicePrefix", "RE").ifBlank { "RE" },
-            paymentTermsDays = json.optInt("paymentTermsDays", 14).coerceIn(1, 90),
-            vatRatePercent = json.optInt("vatRatePercent", 19).coerceIn(0, 27)
-        )
+        return businessProfileFromJson(json)
     }
 
     fun saveBusinessProfile(profile: BusinessProfile) {
-        prefs.edit().putString("business_profile", JSONObject()
+        prefs.edit().putString("business_profile", businessProfileJson(profile).toString()).apply()
+    }
+
+    private fun businessProfileJson(profile: BusinessProfile): JSONObject = JSONObject()
             .put("businessName", profile.businessName).put("street", profile.street)
             .put("postalCode", profile.postalCode).put("city", profile.city)
             .put("taxNumber", profile.taxNumber).put("vatId", profile.vatId)
             .put("invoicePrefix", profile.invoicePrefix).put("paymentTermsDays", profile.paymentTermsDays)
-            .put("vatRatePercent", profile.vatRatePercent).toString()).apply()
-    }
+            .put("vatRatePercent", profile.vatRatePercent)
+
+    private fun businessProfileFromJson(json: JSONObject) = BusinessProfile(
+        businessName = json.optString("businessName"), street = json.optString("street"),
+        postalCode = json.optString("postalCode"), city = json.optString("city"),
+        taxNumber = json.optString("taxNumber"), vatId = json.optString("vatId"),
+        invoicePrefix = json.optString("invoicePrefix", "RE").ifBlank { "RE" },
+        paymentTermsDays = json.optInt("paymentTermsDays", 14).coerceIn(1, 90),
+        vatRatePercent = json.optInt("vatRatePercent", 19).coerceIn(0, 27)
+    )
 
     fun nextInvoiceNumber(): String {
         val year = LocalDate.now().year
@@ -139,6 +237,8 @@ class LocalData(context: Context) {
         prefs.edit().putString(key, JSONArray(values).toString()).apply()
     }
 }
+
+private fun validIsoDate(value: String): Boolean = runCatching { LocalDate.parse(value) }.isSuccess
 
 fun nextInvoiceNumber(year: Int, existingNumbers: List<String>, invoicePrefix: String = "RE"): String {
     val prefix = "${invoicePrefix.ifBlank { "RE" }}-$year-"

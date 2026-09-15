@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -105,6 +106,7 @@ fun OfferManagerDialog(
 fun OfferEditorDialog(
     offer: Offer,
     customers: List<Customer>,
+    products: List<Product>,
     onDismiss: () -> Unit,
     onSave: (Offer) -> Unit
 ) {
@@ -115,6 +117,7 @@ fun OfferEditorDialog(
     var date by remember(offer.id) { mutableStateOf(offer.date.ifBlank { LocalDate.now().toString() }) }
     var validUntil by remember(offer.id) { mutableStateOf(offer.validUntil.ifBlank { LocalDate.now().plusDays(30).toString() }) }
     var menuExpanded by remember { mutableStateOf(false) }
+    var productMenuExpanded by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -134,6 +137,24 @@ fun OfferEditorDialog(
                         }
                     }
                 } else OutlinedTextField(customer, { customer = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Kunde") }, singleLine = true)
+                if (products.isNotEmpty()) Box {
+                    OutlinedButton(onClick = { productMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Inventory2, null); Spacer(Modifier.width(8.dp)); Text("Aus Produktkatalog übernehmen")
+                    }
+                    DropdownMenu(expanded = productMenuExpanded, onDismissRequest = { productMenuExpanded = false }) {
+                        products.forEach { product ->
+                            DropdownMenuItem(
+                                text = { Column { Text(product.name); Text(formatEuro(product.unitPriceCents), color = OfferMuted, fontSize = 11.sp) } },
+                                onClick = {
+                                    description = product.description.ifBlank { product.name }
+                                    amount = formatEuro(product.unitPriceCents)
+                                    productMenuExpanded = false
+                                    error = null
+                                }
+                            )
+                        }
+                    }
+                }
                 OutlinedTextField(description, { description = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Leistung / Beschreibung") })
                 OutlinedTextField(amount, { amount = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Gesamtbetrag (€)") }, singleLine = true)
                 OutlinedTextField(date, { date = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Angebotsdatum (JJJJ-MM-TT)") }, singleLine = true)

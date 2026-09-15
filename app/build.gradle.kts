@@ -30,8 +30,8 @@ android {
         applicationId = "de.kontoklar.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "0.17.0"
+        versionCode = 18
+        versionName = "0.18.0"
     }
 
     buildTypes {

@@ -38,4 +38,17 @@ class TaxReportTest {
         assertEquals(0L, report.expenseCents)
         assertEquals(0, report.missingReceiptCount)
     }
+
+    @Test fun reportsOnlyDocumentedInputVatAndCountsExpensesWithoutBreakdown() {
+        val expenses = listOf(
+            Expense(merchant = "Office", category = "Büro", amountCents = 11_900, date = "2026-06-01", inputVatCents = 1_900),
+            Expense(merchant = "Cash", category = "Sonstiges", amountCents = 500, date = "2026-06-02")
+        )
+
+        val report = taxYearReport(2026, emptyList(), expenses)
+
+        assertEquals(1_900L, report.documentedInputVatCents)
+        assertEquals(10_000L, report.netExpenseCentsWithVatBreakdown)
+        assertEquals(1, report.expensesWithoutVatBreakdownCount)
+    }
 }

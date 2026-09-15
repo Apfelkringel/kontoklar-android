@@ -105,7 +105,8 @@ data class Expense(
     val amountCents: Long,
     val date: String = LocalDate.now().toString(),
     val note: String = "",
-    val receiptUri: String? = null
+    val receiptUri: String? = null,
+    val inputVatCents: Long? = null
 )
 
 fun List<Expense>.upsertExpense(expense: Expense): List<Expense> =
@@ -147,7 +148,7 @@ class LocalData(context: Context) {
         val importedProfile = businessProfileFromJson(snapshot.getJSONObject("businessProfile"))
         require(importedInvoices.all { it.amountCents > 0 && it.customer.isNotBlank() && it.description.isNotBlank() }) { "Die Sicherung enthält ungültige Rechnungen." }
         require(importedOffers.all { it.amountCents > 0 && it.customer.isNotBlank() && it.description.isNotBlank() }) { "Die Sicherung enthält ungültige Angebote." }
-        require(importedExpenses.all { it.amountCents > 0 && it.merchant.isNotBlank() }) { "Die Sicherung enthält ungültige Ausgaben." }
+        require(importedExpenses.all { it.amountCents > 0 && it.merchant.isNotBlank() && (it.inputVatCents == null || it.inputVatCents in 0..it.amountCents) }) { "Die Sicherung enthält ungültige Ausgaben oder Umsatzsteuerangaben." }
         require(importedBankTransactions.all { it.amountCents != 0L && validIsoDate(it.date) && it.id.matches(Regex("[a-f0-9]{64}")) }) { "Die Sicherung enthält ungültige Bankumsätze." }
         require(importedCustomers.all { it.name.isNotBlank() }) { "Die Sicherung enthält ungültige Kundendaten." }
         require(importedProducts.all { it.name.isNotBlank() && it.unitPriceCents > 0 }) { "Die Sicherung enthält ungültige Produkte oder Dienstleistungen." }
@@ -193,7 +194,8 @@ class LocalData(context: Context) {
     private fun expenseFromJson(it: JSONObject) = Expense(
         id = it.optString("id", UUID.randomUUID().toString()), merchant = it.optString("merchant", ""),
         category = it.optString("category", "Sonstiges"), amountCents = it.optLong("amountCents", 0),
-        date = it.optString("date"), note = it.optString("note"), receiptUri = it.optString("receiptUri").takeIf(String::isNotBlank)
+        date = it.optString("date"), note = it.optString("note"), receiptUri = it.optString("receiptUri").takeIf(String::isNotBlank),
+        inputVatCents = it.takeUnless { json -> json.isNull("inputVatCents") }?.optLong("inputVatCents")
     )
 
     private fun bankTransactionFromJson(it: JSONObject) = BankTransaction(
@@ -217,12 +219,12 @@ class LocalData(context: Context) {
 
     fun offers(): List<Offer> = read("offers") { Offer(id = it.optString("id", UUID.randomUUID().toString()), number = it.optString("number"), customer = it.optString("customer"), description = it.optString("description"), amountCents = it.optLong("amountCents"), customerId = it.optString("customerId").takeIf(String::isNotBlank), customerAddress = it.optString("customerAddress"), customerEmail = it.optString("customerEmail"), date = it.optString("date"), validUntil = it.optString("validUntil"), status = it.optString("status", "Entwurf"), convertedInvoiceId = it.optString("convertedInvoiceId").takeIf(String::isNotBlank)) }
 
-    fun expenses(): List<Expense> = read("expenses") { Expense(id = it.optString("id", UUID.randomUUID().toString()), merchant = it.optString("merchant", ""), category = it.optString("category", "Sonstiges"), amountCents = it.optLong("amountCents", 0), date = it.optString("date", ""), note = it.optString("note", ""), receiptUri = it.optString("receiptUri").takeIf(String::isNotBlank)) }
+    fun expenses(): List<Expense> = read("expenses", ::expenseFromJson)
     fun bankTransactions(): List<BankTransaction> = read("bank_transactions", ::bankTransactionFromJson)
 
     fun saveInvoices(values: List<Invoice>) = write("invoices", values.map { JSONObject().put("id", it.id).put("number", it.number).put("customer", it.customer).put("customerId", it.customerId).put("customerAddress", it.customerAddress).put("customerEmail", it.customerEmail).put("description", it.description).put("amountCents", it.amountCents).put("date", it.date).put("serviceDate", it.serviceDate).put("dueDate", it.dueDate).put("status", it.status) })
     fun saveOffers(values: List<Offer>) = write("offers", values.map { JSONObject().put("id", it.id).put("number", it.number).put("customer", it.customer).put("customerId", it.customerId).put("customerAddress", it.customerAddress).put("customerEmail", it.customerEmail).put("description", it.description).put("amountCents", it.amountCents).put("date", it.date).put("validUntil", it.validUntil).put("status", it.status).put("convertedInvoiceId", it.convertedInvoiceId) })
-    fun saveExpenses(values: List<Expense>) = write("expenses", values.map { JSONObject().put("id", it.id).put("merchant", it.merchant).put("category", it.category).put("amountCents", it.amountCents).put("date", it.date).put("note", it.note).put("receiptUri", it.receiptUri) })
+    fun saveExpenses(values: List<Expense>) = write("expenses", values.map { JSONObject().put("id", it.id).put("merchant", it.merchant).put("category", it.category).put("amountCents", it.amountCents).put("date", it.date).put("note", it.note).put("receiptUri", it.receiptUri).put("inputVatCents", it.inputVatCents ?: JSONObject.NULL) })
     fun saveBankTransactions(values: List<BankTransaction>) = write("bank_transactions", values.map { JSONObject().put("id", it.id).put("accountIban", it.accountIban).put("date", it.date).put("counterparty", it.counterparty).put("description", it.description).put("amountCents", it.amountCents).put("reference", it.reference).put("matchedInvoiceId", it.matchedInvoiceId) })
     fun customers(): List<Customer> = read("customers") { Customer(id = it.optString("id", UUID.randomUUID().toString()), name = it.optString("name"), email = it.optString("email"), street = it.optString("street"), postalCode = it.optString("postalCode"), city = it.optString("city"), taxNumber = it.optString("taxNumber")) }
     fun saveCustomers(values: List<Customer>) = write("customers", values.map { JSONObject().put("id", it.id).put("name", it.name).put("email", it.email).put("street", it.street).put("postalCode", it.postalCode).put("city", it.city).put("taxNumber", it.taxNumber) })
@@ -292,11 +294,20 @@ fun nextOfferNumber(year: Int, existingNumbers: List<String>): String {
 }
 
 fun parseEuroCents(raw: String): Long? {
+    return parseEuroCentsAllowZero(raw)?.takeIf { it > 0 }
+}
+
+fun parseOptionalEuroCents(raw: String): Long? {
+    if (raw.isBlank()) return null
+    return parseEuroCentsAllowZero(raw)
+}
+
+private fun parseEuroCentsAllowZero(raw: String): Long? {
     val cleaned = raw.trim().replace("€", "").replace(" ", "")
     if (cleaned.count { it == ',' } > 1) return null
     val normalized = if (',' in cleaned) cleaned.replace(".", "").replace(',', '.') else cleaned
     val amount = normalized.toBigDecimalOrNull() ?: return null
-    if (amount <= java.math.BigDecimal.ZERO || amount.scale() > 2) return null
+    if (amount < java.math.BigDecimal.ZERO || amount.scale() > 2) return null
     return runCatching { amount.movePointRight(2).longValueExact() }.getOrNull()
 }
 

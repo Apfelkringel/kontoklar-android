@@ -488,6 +488,7 @@ private fun KontoKlarApp() {
                             category = "Sonstiges",
                             amountCents = parsed.amountCents,
                             date = parsed.date,
+                            inputVatCents = parsed.vatCents,
                             note = buildString {
                                 append("E-Rechnung ${parsed.invoiceNumber}")
                                 parsed.vatCents?.let { append(" · USt ${formatEuro(it)}") }
@@ -609,7 +610,7 @@ private fun ExpenseScreen(expenses: List<Expense>, onAction: (String) -> Unit, o
         item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { MetricCard("Ausgaben", formatEuro(expenses.sumOf { it.amountCents }), "${expenses.size} erfasst", Icons.Default.Payments, Modifier.weight(1f)); MetricCard("Beleg fehlt", "${expenses.count { it.receiptUri.isNullOrBlank() }}", "Ausgaben", Icons.Default.ErrorOutline, Modifier.weight(1f)) } }
         item { SectionTitle("Alle Ausgaben", "") }
         if (expenses.isEmpty()) item { EmptyState("Noch keine Ausgaben", "Erfasse einen Beleg oder füge eine Ausgabe hinzu.") }
-        items(expenses, key = { it.id }) { expense -> EntryRow(Entry(expense.merchant, "${expense.category} · ${expense.date}${if (expense.receiptUri != null) " · Beleg angehängt" else " · Beleg fehlt"}", "−${formatEuro(expense.amountCents)}", Icons.Default.Receipt, Color(0xFFFFF1E5)), onClick = { onSelect(expense) }) }
+        items(expenses, key = { it.id }) { expense -> EntryRow(Entry(expense.merchant, "${expense.category} · ${expense.date}${expense.inputVatCents?.let { " · USt ${formatEuro(it)}" }.orEmpty()}${if (expense.receiptUri != null) " · Beleg angehängt" else " · Beleg fehlt"}", "−${formatEuro(expense.amountCents)}", Icons.Default.Receipt, Color(0xFFFFF1E5)), onClick = { onSelect(expense) }) }
     }
 }
 
@@ -635,8 +636,12 @@ private fun TaxScreen(invoices: List<Invoice>, expenses: List<Expense>, onAction
                     Spacer(Modifier.height(10.dp))
                     Text("Abzüglich erfasster Ausgaben: ${formatEuro(report.expenseCents)}", color = Color.White.copy(alpha = .9f), fontSize = 13.sp)
                     Text("Differenz der erfassten Bruttobeträge: ${formatEuro(report.recordedDifferenceCents)}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(8.dp))
+                    Text("Ausgewiesene Vorsteuer laut Belegen: ${formatEuro(report.documentedInputVatCents)}", color = Color.White, fontSize = 13.sp)
+                    Text("Nettoausgaben (nur Belege mit Steueraufschlüsselung): ${formatEuro(report.netExpenseCentsWithVatBreakdown)}", color = Color.White.copy(alpha = .9f), fontSize = 12.sp)
+                    Text("Ohne erfasste USt.-Aufschlüsselung: ${report.expensesWithoutVatBreakdownCount} Ausgaben", color = Color.White.copy(alpha = .9f), fontSize = 12.sp)
                     Spacer(Modifier.height(12.dp))
-                    Text("Nur eine Übersicht deiner Eingaben: keine Steuerberechnung. Umsatzsteuer, Zahlungszeitpunkt, Abschreibungen und weitere steuerliche Regeln werden nicht berücksichtigt.", color = Color.White.copy(alpha = .82f), fontSize = 11.sp)
+                    Text("Nur eine Übersicht der manuell erfassten Beträge, keine Umsatzsteuer-Voranmeldung oder Steuerberechnung. Prüfe Vorsteuerabzug, Zahlungszeitpunkt, Abschreibungen und weitere Regeln fachlich.", color = Color.White.copy(alpha = .82f), fontSize = 11.sp)
                 }
             }
         }
@@ -893,6 +898,10 @@ private fun ExpenseDetailsDialog(
             Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text("${expense.category} · ${expense.date}", color = Muted, fontSize = 12.sp)
                 Text(formatEuro(expense.amountCents), color = Ink, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                expense.inputVatCents?.let { vat ->
+                    Text("USt. laut Beleg: ${formatEuro(vat)}", color = Forest, fontSize = 13.sp)
+                    Text("Nettoanteil rechnerisch: ${formatEuro(expense.amountCents - vat)}", color = Muted, fontSize = 12.sp)
+                }
                 if (expense.note.isNotBlank()) Text(expense.note, color = Muted)
                 if (!expense.receiptUri.isNullOrBlank()) {
                     OutlinedButton(onClick = onOpenReceipt, modifier = Modifier.fillMaxWidth()) {
@@ -932,6 +941,7 @@ private fun ActionDialog(
     var productMenuExpanded by remember { mutableStateOf(false) }
     var description by remember(title, existingInvoice?.id) { mutableStateOf(existingInvoice?.description.orEmpty()) }
     var amount by remember(title, existingExpense?.id, existingInvoice?.id) { mutableStateOf((existingInvoice?.amountCents ?: existingExpense?.amountCents)?.let(::formatEuro).orEmpty()) }
+    var inputVat by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.inputVatCents?.let(::formatEuro).orEmpty()) }
     var category by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.category ?: "Sonstiges") }
     var merchant by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.merchant.orEmpty()) }
     var note by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.note.orEmpty()) }
@@ -1073,6 +1083,8 @@ private fun ActionDialog(
                 } else if (isExpense) {
                     OutlinedTextField(merchant, { merchant = it; error = null }, label = { Text("Händler / Lieferant") }, singleLine = true)
                     OutlinedTextField(amount, { amount = it; error = null }, label = { Text("Betrag (€)") }, singleLine = true)
+                    OutlinedTextField(inputVat, { inputVat = it; error = null }, label = { Text("Enthaltene Vorsteuer laut Beleg (€), optional") }, singleLine = true)
+                    Text("Nur den auf dem Beleg ausgewiesenen Steuerbetrag eintragen. Leer lassen, wenn unbekannt.", color = Muted, fontSize = 11.sp)
                     OutlinedTextField(expenseDate, { expenseDate = it; error = null }, label = { Text("Datum (JJJJ-MM-TT)") }, singleLine = true)
                     Box {
                         OutlinedButton(onClick = { categoryExpanded = true }, modifier = Modifier.fillMaxWidth()) { Text("Kategorie: $category", modifier = Modifier.weight(1f)); Icon(Icons.Default.ArrowDropDown, null) }
@@ -1109,6 +1121,7 @@ private fun ActionDialog(
         confirmButton = {
             TextButton(onClick = {
                 val cents = parseEuroCents(amount)
+                val parsedInputVat = parseOptionalEuroCents(inputVat)
                 when {
                     isProfile && invoicePrefix.isBlank() -> error = "Bitte gib ein Rechnungsnummer-Präfix an."
                     isProfile && (paymentTermsDays.toIntOrNull() !in 1..90 || vatRatePercent.toIntOrNull() !in 0..27) -> error = "Zahlungsziel: 1–90 Tage; USt.-Satz: 0–27 %."
@@ -1118,7 +1131,9 @@ private fun ActionDialog(
                     isInvoice && (runCatching { LocalDate.parse(invoiceDate) }.isFailure || runCatching { LocalDate.parse(serviceDate) }.isFailure || runCatching { LocalDate.parse(invoiceDueDate) }.isFailure) -> error = "Bitte gib Rechnungs-, Leistungs- und Fälligkeitsdatum als JJJJ-MM-TT an."
                     isExpense && merchant.isBlank() -> error = "Bitte gib einen Händler an."
                     isExpense && runCatching { LocalDate.parse(expenseDate) }.isFailure -> error = "Bitte gib ein Datum im Format JJJJ-MM-TT an."
+                    isExpense && inputVat.isNotBlank() && parsedInputVat == null -> error = "Bitte gib eine gültige Vorsteuer zwischen 0,00 € und dem Bruttobetrag an."
                     cents == null -> error = "Bitte gib einen gültigen positiven Betrag an (z. B. 125,50)."
+                    isExpense && parsedInputVat != null && parsedInputVat > cents -> error = "Die Vorsteuer darf nicht höher als der Bruttobetrag sein."
                     isInvoice -> onCreateInvoice(
                         (existingInvoice ?: Invoice(customer = "", description = "", amountCents = 0)).copy(
                             customer = customer.trim(),
@@ -1133,8 +1148,8 @@ private fun ActionDialog(
                         )
                     )
                     isExpense -> onCreateExpense(
-                        existingExpense?.copy(merchant = merchant.trim(), category = category, amountCents = cents, date = expenseDate, note = note.trim(), receiptUri = receiptUri)
-                            ?: Expense(merchant = merchant.trim(), category = category, amountCents = cents, date = expenseDate, note = note.trim(), receiptUri = receiptUri)
+                        existingExpense?.copy(merchant = merchant.trim(), category = category, amountCents = cents, date = expenseDate, note = note.trim(), receiptUri = receiptUri, inputVatCents = parsedInputVat)
+                            ?: Expense(merchant = merchant.trim(), category = category, amountCents = cents, date = expenseDate, note = note.trim(), receiptUri = receiptUri, inputVatCents = parsedInputVat)
                     )
                     else -> onSave("$title geöffnet")
                 }

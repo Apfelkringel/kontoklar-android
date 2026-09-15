@@ -7,6 +7,9 @@ data class TaxYearReport(
     val issuedInvoiceCents: Long,
     val issuedInvoiceCount: Int,
     val expenseCents: Long,
+    val documentedInputVatCents: Long,
+    val netExpenseCentsWithVatBreakdown: Long,
+    val expensesWithoutVatBreakdownCount: Int,
     val recordedDifferenceCents: Long,
     val openInvoiceCents: Long,
     val overdueInvoiceCount: Int,
@@ -31,11 +34,15 @@ fun taxYearReport(
     }
     val invoiceTotal = issuedInvoices.sumOf { it.amountCents }
     val expenseTotal = yearExpenses.sumOf { it.amountCents }
+    val expensesWithVat = yearExpenses.filter { it.inputVatCents != null }
     return TaxYearReport(
         year = year,
         issuedInvoiceCents = invoiceTotal,
         issuedInvoiceCount = issuedInvoices.size,
         expenseCents = expenseTotal,
+        documentedInputVatCents = expensesWithVat.sumOf { it.inputVatCents ?: 0L },
+        netExpenseCentsWithVatBreakdown = expensesWithVat.sumOf { it.amountCents - (it.inputVatCents ?: 0L) },
+        expensesWithoutVatBreakdownCount = yearExpenses.count { it.inputVatCents == null },
         recordedDifferenceCents = invoiceTotal - expenseTotal,
         openInvoiceCents = openInvoices.sumOf { it.amountCents },
         overdueInvoiceCount = overdueInvoices.size,

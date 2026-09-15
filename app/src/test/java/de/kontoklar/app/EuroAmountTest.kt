@@ -19,6 +19,14 @@ class EuroAmountTest {
         assertNull(parseEuroCents("1,234"))
     }
 
+    @Test fun optionalVatAmountAcceptsZeroOrBlankButRejectsMalformedAndNegativeValues() {
+        assertNull(parseOptionalEuroCents(""))
+        assertEquals(0L, parseOptionalEuroCents("0,00"))
+        assertEquals(399L, parseOptionalEuroCents("3,99 €"))
+        assertNull(parseOptionalEuroCents("-0,01"))
+        assertNull(parseOptionalEuroCents("1,234"))
+    }
+
     @Test fun comparesSemanticVersions() {
         assertEquals(true, isNewerVersion("v0.3.0", "0.2.0"))
         assertEquals(false, isNewerVersion("0.2.0", "0.2.0"))
@@ -38,6 +46,16 @@ class EuroAmountTest {
         assertEquals("\"a \"\"quote\"\"\"", csvField("a \"quote\""))
         assertEquals("\"'=1+1\"", csvField("=1+1"))
         assertEquals("1234,56", centsAsGermanDecimal(123456))
+    }
+
+    @Test fun expenseCsvCarriesExplicitNetAndVatWithoutInferringUnknownValues() {
+        val known = expenseCsvFields(Expense(merchant = "Büro", category = "Büro", amountCents = 11_900, inputVatCents = 1_900))
+        assertEquals("100,00", known[9])
+        assertEquals("19,00", known[10])
+
+        val unknown = expenseCsvFields(Expense(merchant = "Kasse", category = "Sonstiges", amountCents = 500))
+        assertEquals("", unknown[9])
+        assertEquals("", unknown[10])
     }
 
     @Test fun invoiceNumbersAreSequentialPerYear() {

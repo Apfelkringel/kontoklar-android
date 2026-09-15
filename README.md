@@ -1,0 +1,33 @@
+# KontoKlar for Android
+
+Native Android app prototype built with Kotlin and Jetpack Compose. The app uses a distinct name and package from Accountable; it is an independent implementation, not a copy of Accountable's private source code or backend.
+
+## Implemented
+
+- Dashboard with totals derived from locally saved invoices and expenses.
+- Create invoice drafts with customer, description, amount, and a 14-day due date.
+- Manually record expenses with merchant, amount, category, date, and note.
+- Persist those records locally with Android SharedPreferences.
+- German and dot-decimal Euro input parsing, with unit tests.
+- Navigation for invoices, expenses, tax overview, and account/settings areas.
+- In-app check for the latest public GitHub release and APK download through Android Download Manager.
+- Android's system installer confirms package updates; it requires the one-time "Install unknown apps" permission.
+- Clear distinction between local records and external banking/tax services.
+
+## Not implemented yet
+
+There is no account/login or cloud sync, bank/PSD2 connection, actual automatic transfer of tax reserves, receipt OCR/camera import, invoice PDF/e-invoice transmission, tax calculation or submission, notifications, or accountant collaboration. The tax screen is informational and does not submit declarations or provide binding calculations.
+
+## Publishing an update
+
+Push a version tag such as `v0.3.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
+
+## Build
+
+Requires JDK 17+ and Android SDK Platform 35 / Build Tools 35.0.0.
+
+```sh
+./gradlew testDebugUnitTest assembleDebug
+```
+
+The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.

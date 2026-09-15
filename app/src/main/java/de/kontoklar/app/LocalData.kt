@@ -86,6 +86,18 @@ data class BusinessProfile(
     val iban: String = ""
 )
 
+data class InvoiceAmountBreakdown(val netCents: Long, val vatCents: Long, val grossCents: Long)
+
+fun invoiceAmountBreakdown(grossCents: Long, vatRatePercent: Int): InvoiceAmountBreakdown {
+    require(grossCents >= 0) { "Der Bruttobetrag darf nicht negativ sein." }
+    require(vatRatePercent in 0..100) { "Der Umsatzsteuersatz ist ungültig." }
+    val divisor = 100L + vatRatePercent
+    val quotient = grossCents / divisor
+    val remainder = grossCents % divisor
+    val net = quotient * 100L + (remainder * 100L + divisor / 2L) / divisor
+    return InvoiceAmountBreakdown(net, grossCents - net, grossCents)
+}
+
 data class Expense(
     val id: String = UUID.randomUUID().toString(),
     val merchant: String,

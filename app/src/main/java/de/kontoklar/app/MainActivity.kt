@@ -421,7 +421,7 @@ private fun KontoKlarApp() {
                         .onSuccess { pendingInvoiceXml = it; invoiceXmlExportLauncher.launch("${invoice.number.ifBlank { "rechnung" }}.xml") }
                         .onFailure { toast = it.message ?: "XRechnung konnte nicht erstellt werden." }
                 },
-                onSharePdf = { runCatching { shareInvoiceDraft(context, invoice) }.onFailure { toast = "PDF konnte nicht erstellt werden: ${it.message}" } },
+                onSharePdf = { runCatching { shareInvoiceDraft(context, invoice, profile) }.onFailure { toast = "PDF konnte nicht erstellt werden: ${it.message}" } },
                 onEdit = { invoiceToEdit = invoice; selectedInvoice = null; dialog = "Rechnung bearbeiten" },
                 onDelete = { invoiceToDelete = invoice; selectedInvoice = null },
                 onStatusChange = { status ->

@@ -17,6 +17,17 @@ class ReceiptScanTest {
         assertEquals(listOf(other), saved.withoutExpense(original.id))
     }
 
+    @Test fun invoiceDraftEditKeepsOneRecordAndDeleteUsesStableId() {
+        val original = Invoice(id = "invoice-1", number = "RE-2026-0001", customer = "Mira", description = "Design", amountCents = 12000)
+        val edited = original.copy(description = "Brand design", amountCents = 13500)
+
+        val saved = listOf(original).upsertInvoice(edited)
+
+        assertEquals(1, saved.size)
+        assertEquals(edited, saved.single())
+        assertEquals(emptyList<Invoice>(), saved.withoutInvoice(original.id))
+    }
+
     @Test fun productCatalogUpdatesAndDeletesByStableId() {
         val product = Product(id = "product-1", name = "Beratung", unitPriceCents = 15000)
         val edited = product.copy(name = "Beratung (Stunde)", unitPriceCents = 17500)

@@ -96,6 +96,11 @@ fun List<Expense>.upsertExpense(expense: Expense): List<Expense> =
 
 fun List<Expense>.withoutExpense(id: String): List<Expense> = filterNot { it.id == id }
 
+fun List<Invoice>.upsertInvoice(invoice: Invoice): List<Invoice> =
+    if (any { it.id == invoice.id }) map { if (it.id == invoice.id) invoice else it } else listOf(invoice) + this
+
+fun List<Invoice>.withoutInvoice(id: String): List<Invoice> = filterNot { it.id == id }
+
 fun List<Product>.upsertProduct(product: Product): List<Product> =
     if (any { it.id == product.id }) map { if (it.id == product.id) product else it } else listOf(product) + this
 

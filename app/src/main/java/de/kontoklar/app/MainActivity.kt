@@ -71,6 +71,8 @@ private fun KontoKlarApp() {
     var products by remember { mutableStateOf(store.products()) }
     var profile by remember { mutableStateOf(store.businessProfile()) }
     var selectedInvoice by remember { mutableStateOf<Invoice?>(null) }
+    var invoiceToEdit by remember { mutableStateOf<Invoice?>(null) }
+    var invoiceToDelete by remember { mutableStateOf<Invoice?>(null) }
     var selectedExpense by remember { mutableStateOf<Expense?>(null) }
     var expenseToEdit by remember { mutableStateOf<Expense?>(null) }
     var expenseToDelete by remember { mutableStateOf<Expense?>(null) }
@@ -157,10 +159,19 @@ private fun KontoKlarApp() {
         }
         if (dialog != null) ActionDialog(
             title = dialog!!,
+            existingInvoice = invoiceToEdit,
             existingExpense = expenseToEdit,
-            onDismiss = { dialog = null; expenseToEdit = null },
+            onDismiss = { dialog = null; expenseToEdit = null; invoiceToEdit = null },
             onSave = { toast = it; dialog = null },
-            onCreateInvoice = { invoice -> invoices = listOf(invoice.copy(number = store.nextInvoiceNumber()) ) + invoices; store.saveInvoices(invoices); toast = "Rechnungsentwurf gespeichert"; dialog = null },
+            onCreateInvoice = { invoice ->
+                val editing = invoices.any { it.id == invoice.id }
+                val persisted = if (invoice.number.isBlank()) invoice.copy(number = store.nextInvoiceNumber()) else invoice
+                invoices = invoices.upsertInvoice(persisted)
+                store.saveInvoices(invoices)
+                toast = if (editing) "Rechnungsentwurf aktualisiert" else "Rechnungsentwurf gespeichert"
+                invoiceToEdit = null
+                dialog = null
+            },
             onCreateExpense = { expense ->
                 val isEditing = expenses.any { it.id == expense.id }
                 expenses = expenses.upsertExpense(expense)
@@ -318,12 +329,23 @@ private fun KontoKlarApp() {
                 invoice = invoice,
                 onDismiss = { selectedInvoice = null },
                 onSharePdf = { runCatching { shareInvoiceDraft(context, invoice) }.onFailure { toast = "PDF konnte nicht erstellt werden: ${it.message}" } },
+                onEdit = { invoiceToEdit = invoice; selectedInvoice = null; dialog = "Rechnung bearbeiten" },
+                onDelete = { invoiceToDelete = invoice; selectedInvoice = null },
                 onStatusChange = { status ->
                     invoices = invoices.map { if (it.id == invoice.id) it.copy(status = status) else it }
                     store.saveInvoices(invoices)
                     selectedInvoice = null
                     toast = "Rechnungsstatus: $status"
                 }
+            )
+        }
+        invoiceToDelete?.let { invoice ->
+            AlertDialog(
+                onDismissRequest = { invoiceToDelete = null },
+                title = { Text("Rechnungsentwurf löschen?") },
+                text = { Text("${invoice.number} für ${invoice.customer} wird dauerhaft aus den lokalen Rechnungen entfernt.") },
+                confirmButton = { TextButton(onClick = { invoices = invoices.withoutInvoice(invoice.id); store.saveInvoices(invoices); invoiceToDelete = null; toast = "Rechnungsentwurf gelöscht" }) { Text("Löschen", color = MaterialTheme.colorScheme.error) } },
+                dismissButton = { TextButton(onClick = { invoiceToDelete = null }) { Text("Abbrechen") } }
             )
         }
         selectedExpense?.let { expense ->
@@ -678,6 +700,8 @@ private fun InvoiceDetailsDialog(
     invoice: Invoice,
     onDismiss: () -> Unit,
     onSharePdf: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
     onStatusChange: (String) -> Unit
 ) {
     AlertDialog(
@@ -695,6 +719,12 @@ private fun InvoiceDetailsDialog(
                     Icon(Icons.Default.PictureAsPdf, null); Spacer(Modifier.width(8.dp)); Text("Entwurfs-PDF teilen")
                 }
                 if (invoice.status == "Entwurf") {
+                    OutlinedButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Edit, null); Spacer(Modifier.width(8.dp)); Text("Entwurf bearbeiten")
+                    }
+                    TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.colorScheme.error); Spacer(Modifier.width(8.dp)); Text("Entwurf löschen", color = MaterialTheme.colorScheme.error)
+                    }
                     Button(onClick = { onStatusChange("Versendet") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Forest)) { Text("Als versendet markieren") }
                 } else if (invoice.status == "Versendet") {
                     Button(onClick = { onStatusChange("Bezahlt") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Forest)) { Text("Als bezahlt markieren") }
@@ -743,6 +773,7 @@ private fun ExpenseDetailsDialog(
 @Composable
 private fun ActionDialog(
     title: String,
+    existingInvoice: Invoice?,
     existingExpense: Expense?,
     onDismiss: () -> Unit,
     onSave: (String) -> Unit,
@@ -753,12 +784,12 @@ private fun ActionDialog(
     products: List<Product>,
     onSaveProfile: (BusinessProfile) -> Unit
 ) {
-    var customer by remember { mutableStateOf("") }
-    var selectedCustomer by remember { mutableStateOf<Customer?>(null) }
+    var customer by remember(title, existingInvoice?.id) { mutableStateOf(existingInvoice?.customer.orEmpty()) }
+    var selectedCustomer by remember(title, existingInvoice?.id) { mutableStateOf(customers.firstOrNull { it.id == existingInvoice?.customerId }) }
     var customerMenuExpanded by remember { mutableStateOf(false) }
     var productMenuExpanded by remember { mutableStateOf(false) }
-    var description by remember { mutableStateOf("") }
-    var amount by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.let { formatEuro(it.amountCents) }.orEmpty()) }
+    var description by remember(title, existingInvoice?.id) { mutableStateOf(existingInvoice?.description.orEmpty()) }
+    var amount by remember(title, existingExpense?.id, existingInvoice?.id) { mutableStateOf((existingInvoice?.amountCents ?: existingExpense?.amountCents)?.let(::formatEuro).orEmpty()) }
     var category by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.category ?: "Sonstiges") }
     var merchant by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.merchant.orEmpty()) }
     var note by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.note.orEmpty()) }
@@ -766,6 +797,8 @@ private fun ActionDialog(
     var categoryExpanded by remember { mutableStateOf(false) }
     var receiptUri by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.receiptUri) }
     var expenseDate by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.date ?: LocalDate.now().toString()) }
+    var invoiceDate by remember(title, existingInvoice?.id) { mutableStateOf(existingInvoice?.date ?: LocalDate.now().toString()) }
+    var invoiceDueDate by remember(title, existingInvoice?.id) { mutableStateOf(existingInvoice?.dueDate ?: LocalDate.now().plusDays(profile.paymentTermsDays.toLong()).toString()) }
     var scanStatus by remember { mutableStateOf<String?>(null) }
     var cameraOutputUri by remember { mutableStateOf<Uri?>(null) }
     var businessName by remember { mutableStateOf(profile.businessName) }
@@ -879,6 +912,11 @@ private fun ActionDialog(
                     }
                     OutlinedTextField(description, { description = it }, label = { Text("Leistung / Beschreibung") }, singleLine = true)
                     OutlinedTextField(amount, { amount = it; error = null }, label = { Text("Betrag inkl. USt. (€)") }, singleLine = true)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(invoiceDate, { invoiceDate = it; error = null }, label = { Text("Rechnungsdatum") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(invoiceDueDate, { invoiceDueDate = it; error = null }, label = { Text("Fällig am") }, modifier = Modifier.weight(1f), singleLine = true)
+                    }
+                    Text("Datum im Format JJJJ-MM-TT. Der Beleg wird weiterhin als unvollständiger Entwurf gekennzeichnet.", color = Muted, fontSize = 11.sp)
                     Text("Zahlungsziel: ${profile.paymentTermsDays} Tage · Nummernpräfix: ${profile.invoicePrefix}", color = Muted, fontSize = 11.sp)
                 } else if (isExpense) {
                     OutlinedTextField(merchant, { merchant = it; error = null }, label = { Text("Händler / Lieferant") }, singleLine = true)
@@ -925,17 +963,29 @@ private fun ActionDialog(
                     isProfile -> onSaveProfile(BusinessProfile(businessName.trim(), street.trim(), postalCode.trim(), city.trim(), taxNumber.trim(), vatId.trim(), invoicePrefix.trim(), paymentTermsDays.toInt(), vatRatePercent.toInt()))
                     isInvoice && customer.isBlank() -> error = "Bitte gib einen Kunden an."
                     isInvoice && description.isBlank() -> error = "Bitte beschreibe die Leistung."
+                    isInvoice && (runCatching { LocalDate.parse(invoiceDate) }.isFailure || runCatching { LocalDate.parse(invoiceDueDate) }.isFailure) -> error = "Bitte gib Rechnungs- und Fälligkeitsdatum als JJJJ-MM-TT an."
                     isExpense && merchant.isBlank() -> error = "Bitte gib einen Händler an."
                     isExpense && runCatching { LocalDate.parse(expenseDate) }.isFailure -> error = "Bitte gib ein Datum im Format JJJJ-MM-TT an."
                     cents == null -> error = "Bitte gib einen gültigen positiven Betrag an (z. B. 125,50)."
-                    isInvoice -> onCreateInvoice(Invoice(customer = customer.trim(), customerId = selectedCustomer?.id, customerAddress = selectedCustomer?.postalAddress.orEmpty(), customerEmail = selectedCustomer?.email.orEmpty(), description = description.trim(), amountCents = cents, dueDate = LocalDate.now().plusDays(profile.paymentTermsDays.toLong()).toString()))
+                    isInvoice -> onCreateInvoice(
+                        (existingInvoice ?: Invoice(customer = "", description = "", amountCents = 0)).copy(
+                            customer = customer.trim(),
+                            customerId = selectedCustomer?.id ?: existingInvoice?.takeIf { it.customer == customer.trim() }?.customerId,
+                            customerAddress = selectedCustomer?.postalAddress ?: existingInvoice?.takeIf { it.customer == customer.trim() }?.customerAddress.orEmpty(),
+                            customerEmail = selectedCustomer?.email ?: existingInvoice?.takeIf { it.customer == customer.trim() }?.customerEmail.orEmpty(),
+                            description = description.trim(),
+                            amountCents = cents,
+                            date = invoiceDate,
+                            dueDate = invoiceDueDate
+                        )
+                    )
                     isExpense -> onCreateExpense(
                         existingExpense?.copy(merchant = merchant.trim(), category = category, amountCents = cents, date = expenseDate, note = note.trim(), receiptUri = receiptUri)
                             ?: Expense(merchant = merchant.trim(), category = category, amountCents = cents, date = expenseDate, note = note.trim(), receiptUri = receiptUri)
                     )
                     else -> onSave("$title geöffnet")
                 }
-        }) { Text(if (isProfile) "Profil speichern" else if (isInvoice) "Entwurf speichern" else if (isExpense && existingExpense != null) "Änderungen speichern" else if (isExpense) "Ausgabe speichern" else "Weiter", color = Forest) }
+        }) { Text(if (isProfile) "Profil speichern" else if (isInvoice && existingInvoice != null) "Änderungen speichern" else if (isInvoice) "Entwurf speichern" else if (isExpense && existingExpense != null) "Änderungen speichern" else if (isExpense) "Ausgabe speichern" else "Weiter", color = Forest) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen", color = Muted) } },
         containerColor = Color.White

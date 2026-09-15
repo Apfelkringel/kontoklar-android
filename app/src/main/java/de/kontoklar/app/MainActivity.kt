@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.provider.OpenableColumns
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -119,8 +120,10 @@ private fun KontoKlarApp() {
             runCatching {
                 runCatching { context.contentResolver.takePersistableUriPermission(source, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                 withContext(Dispatchers.IO) {
-                    val name = source.lastPathSegment?.substringAfterLast('/')?.ifBlank { "E-Rechnung.xml" } ?: "E-Rechnung.xml"
-                    context.contentResolver.openInputStream(source)?.use { parseIncomingInvoiceXml(it, name) }
+                    val name = context.contentResolver.query(source, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) cursor.getString(cursor.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME)) else null
+                    }?.takeIf(String::isNotBlank) ?: source.lastPathSegment?.substringAfterLast('/')?.ifBlank { "E-Rechnung" } ?: "E-Rechnung"
+                    context.contentResolver.openInputStream(source)?.use { parseIncomingInvoice(it, name, context.applicationContext) }
                         ?: error("Die ausgewählte Datei kann nicht gelesen werden.")
                 }
             }.onSuccess { parsed ->

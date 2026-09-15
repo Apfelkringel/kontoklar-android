@@ -49,7 +49,7 @@ fun IncomingInvoiceReviewDialog(
                 Spacer(Modifier.height(8.dp))
                 Text("Prüfe die übernommenen Daten. Beim Übernehmen wird eine Ausgabe angelegt und die Original-XML als Beleg angehängt. Dieses XML kann lokal, ohne Übertragung an einen Server, verarbeitet werden.")
                 Spacer(Modifier.height(6.dp))
-                Text("Der Import unterstützt derzeit XRechnung im UBL-XML-Format; ZUGFeRD-PDF und CII werden noch nicht importiert.")
+                Text("Unterstützt werden XRechnung-UBL/CII sowie ZUGFeRD- und Factur-X-PDFs mit eingebetteter CII-Rechnung. Die PDF-Datei wird als Originalbeleg gespeichert.")
             }
         },
         confirmButton = {

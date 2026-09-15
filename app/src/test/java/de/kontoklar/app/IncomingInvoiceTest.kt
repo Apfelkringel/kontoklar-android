@@ -17,6 +17,21 @@ class IncomingInvoiceTest {
           <cac:LegalMonetaryTotal><cbc:PayableAmount currencyID="EUR">119.00</cbc:PayableAmount></cac:LegalMonetaryTotal>
           <cac:InvoiceLine><cac:Item><cbc:Name>Material &lt;Spezial&gt;</cbc:Name></cac:Item></cac:InvoiceLine>
         </ubl:Invoice>""".trimIndent()
+    private val cii = """<?xml version="1.0" encoding="UTF-8"?>
+        <rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"
+          xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100"
+          xmlns:udt="urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100">
+          <rsm:ExchangedDocument><ram:ID>CII-2026-1</ram:ID><ram:IssueDateTime><udt:DateTimeString format="102">20260914</udt:DateTimeString></ram:IssueDateTime></rsm:ExchangedDocument>
+          <rsm:SupplyChainTradeTransaction>
+            <ram:IncludedSupplyChainTradeLineItem><ram:SpecifiedTradeProduct><ram:Name>Beratung</ram:Name></ram:SpecifiedTradeProduct></ram:IncludedSupplyChainTradeLineItem>
+            <ram:ApplicableHeaderTradeAgreement><ram:SellerTradeParty><ram:Name>Beispiel GmbH</ram:Name></ram:SellerTradeParty></ram:ApplicableHeaderTradeAgreement>
+            <ram:ApplicableHeaderTradeSettlement><ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>
+              <ram:SpecifiedTradePaymentTerms><ram:DueDateDateTime><udt:DateTimeString format="102">20261014</udt:DateTimeString></ram:DueDateDateTime></ram:SpecifiedTradePaymentTerms>
+              <ram:ApplicableTradeTax><ram:CalculatedAmount>19.00</ram:CalculatedAmount></ram:ApplicableTradeTax>
+              <ram:SpecifiedTradeSettlementHeaderMonetarySummation><ram:TaxTotalAmount>19.00</ram:TaxTotalAmount><ram:GrandTotalAmount currencyID="EUR">119.00</ram:GrandTotalAmount></ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+            </ram:ApplicableHeaderTradeSettlement>
+          </rsm:SupplyChainTradeTransaction>
+        </rsm:CrossIndustryInvoice>""".trimIndent()
 
     @Test fun extractsUblInvoiceForLocalExpenseReview() {
         val parsed = parseIncomingInvoiceXml(ByteArrayInputStream(xml.toByteArray()), "lieferant.xml")
@@ -40,5 +55,16 @@ class IncomingInvoiceTest {
     @Test fun rejectsXmlExternalEntityDeclarations() {
         val hostile = """<!DOCTYPE Invoice [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">&xxe;</Invoice>"""
         assertTrue(runCatching { parseIncomingInvoiceXml(ByteArrayInputStream(hostile.toByteArray()), "invoice.xml") }.isFailure)
+    }
+
+    @Test fun extractsCiiInvoiceIncludingUncefactDates() {
+        val parsed = parseIncomingInvoiceXml(ByteArrayInputStream(cii.toByteArray()), "zugferd.xml")
+        assertEquals("CII-2026-1", parsed.invoiceNumber)
+        assertEquals("Beispiel GmbH", parsed.supplier)
+        assertEquals("Beratung", parsed.description)
+        assertEquals(11900L, parsed.amountCents)
+        assertEquals(1900L, parsed.vatCents)
+        assertEquals("2026-09-14", parsed.date)
+        assertEquals("2026-10-14", parsed.dueDate)
     }
 }

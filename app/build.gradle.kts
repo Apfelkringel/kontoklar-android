@@ -30,8 +30,8 @@ android {
         applicationId = "de.kontoklar.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.14.0"
+        versionCode = 15
+        versionName = "0.15.0"
     }
 
     buildTypes {
@@ -60,6 +60,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("net.sf.kxml:kxml2:2.3.0")
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     testImplementation("junit:junit:4.13.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

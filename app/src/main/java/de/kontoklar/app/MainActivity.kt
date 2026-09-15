@@ -1,5 +1,6 @@
 package de.kontoklar.app
 
+import android.Manifest
 import android.os.Bundle
 import android.content.Intent
 import android.net.Uri
@@ -47,6 +48,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent { KontoKlarApp() }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        InvoiceReminderScheduler.reconcile(this, LocalData(this).invoices())
     }
 }
 
@@ -104,6 +110,11 @@ private fun KontoKlarApp() {
     val backupImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->
         if (source != null) restoreBackupUri = source
     }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) InvoiceReminderScheduler.reconcile(context, store.invoices())
+        else toast = "Zahlungserinnerungen sind aus. Du kannst Mitteilungen später in den Android-Einstellungen erlauben."
+    }
+    LaunchedEffect(invoices) { InvoiceReminderScheduler.reconcile(context, invoices) }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(toast) { toast?.let { snackbar.showSnackbar(it); toast = null } }
 
@@ -334,6 +345,9 @@ private fun KontoKlarApp() {
                 onStatusChange = { status ->
                     invoices = invoices.map { if (it.id == invoice.id) it.copy(status = status) else it }
                     store.saveInvoices(invoices)
+                    if (status == "Versendet" && android.os.Build.VERSION.SDK_INT >= 33 &&
+                        androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     selectedInvoice = null
                     toast = "Rechnungsstatus: $status"
                 }
@@ -725,6 +739,7 @@ private fun InvoiceDetailsDialog(
                     TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.colorScheme.error); Spacer(Modifier.width(8.dp)); Text("Entwurf löschen", color = MaterialTheme.colorScheme.error)
                     }
+                    Text("Nach der Fälligkeit kann KontoKlar einmalig eine Zahlungserinnerung senden. Android-Mitteilungen müssen dafür erlaubt sein.", color = Muted, fontSize = 11.sp)
                     Button(onClick = { onStatusChange("Versendet") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Forest)) { Text("Als versendet markieren") }
                 } else if (invoice.status == "Versendet") {
                     Button(onClick = { onStatusChange("Bezahlt") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Forest)) { Text("Als bezahlt markieren") }

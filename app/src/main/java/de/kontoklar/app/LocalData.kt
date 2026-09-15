@@ -12,10 +12,26 @@ data class Invoice(
     val customer: String,
     val description: String,
     val amountCents: Long,
+    val customerId: String? = null,
+    val customerAddress: String = "",
+    val customerEmail: String = "",
     val date: String = LocalDate.now().toString(),
     val dueDate: String = LocalDate.now().plusDays(14).toString(),
     val status: String = "Entwurf"
 )
+
+data class Customer(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String = "",
+    val email: String = "",
+    val street: String = "",
+    val postalCode: String = "",
+    val city: String = "",
+    val taxNumber: String = ""
+) {
+    val postalAddress: String get() = listOf(street, listOf(postalCode, city).filter(String::isNotBlank).joinToString(" "))
+        .filter(String::isNotBlank).joinToString("\n")
+}
 
 data class BusinessProfile(
     val businessName: String = "",
@@ -42,12 +58,14 @@ data class Expense(
 class LocalData(context: Context) {
     private val prefs = context.getSharedPreferences("kontoklar_data_v1", Context.MODE_PRIVATE)
 
-    fun invoices(): List<Invoice> = read("invoices") { Invoice(id = it.optString("id", UUID.randomUUID().toString()), number = it.optString("number", ""), customer = it.optString("customer", ""), description = it.optString("description", ""), amountCents = it.optLong("amountCents", 0), date = it.optString("date", ""), dueDate = it.optString("dueDate", ""), status = it.optString("status", "Entwurf")) }
+    fun invoices(): List<Invoice> = read("invoices") { Invoice(id = it.optString("id", UUID.randomUUID().toString()), number = it.optString("number", ""), customer = it.optString("customer", ""), description = it.optString("description", ""), amountCents = it.optLong("amountCents", 0), customerId = it.optString("customerId").takeIf(String::isNotBlank), customerAddress = it.optString("customerAddress"), customerEmail = it.optString("customerEmail"), date = it.optString("date", ""), dueDate = it.optString("dueDate", ""), status = it.optString("status", "Entwurf")) }
 
     fun expenses(): List<Expense> = read("expenses") { Expense(id = it.optString("id", UUID.randomUUID().toString()), merchant = it.optString("merchant", ""), category = it.optString("category", "Sonstiges"), amountCents = it.optLong("amountCents", 0), date = it.optString("date", ""), note = it.optString("note", ""), receiptUri = it.optString("receiptUri").takeIf(String::isNotBlank)) }
 
-    fun saveInvoices(values: List<Invoice>) = write("invoices", values.map { JSONObject().put("id", it.id).put("number", it.number).put("customer", it.customer).put("description", it.description).put("amountCents", it.amountCents).put("date", it.date).put("dueDate", it.dueDate).put("status", it.status) })
+    fun saveInvoices(values: List<Invoice>) = write("invoices", values.map { JSONObject().put("id", it.id).put("number", it.number).put("customer", it.customer).put("customerId", it.customerId).put("customerAddress", it.customerAddress).put("customerEmail", it.customerEmail).put("description", it.description).put("amountCents", it.amountCents).put("date", it.date).put("dueDate", it.dueDate).put("status", it.status) })
     fun saveExpenses(values: List<Expense>) = write("expenses", values.map { JSONObject().put("id", it.id).put("merchant", it.merchant).put("category", it.category).put("amountCents", it.amountCents).put("date", it.date).put("note", it.note).put("receiptUri", it.receiptUri) })
+    fun customers(): List<Customer> = read("customers") { Customer(id = it.optString("id", UUID.randomUUID().toString()), name = it.optString("name"), email = it.optString("email"), street = it.optString("street"), postalCode = it.optString("postalCode"), city = it.optString("city"), taxNumber = it.optString("taxNumber")) }
+    fun saveCustomers(values: List<Customer>) = write("customers", values.map { JSONObject().put("id", it.id).put("name", it.name).put("email", it.email).put("street", it.street).put("postalCode", it.postalCode).put("city", it.city).put("taxNumber", it.taxNumber) })
 
     fun businessProfile(): BusinessProfile {
         val json = prefs.getString("business_profile", null)?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return BusinessProfile()

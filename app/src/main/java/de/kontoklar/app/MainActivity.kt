@@ -65,11 +65,16 @@ private fun KontoKlarApp() {
     val store = remember { LocalData(context) }
     var invoices by remember { mutableStateOf(store.invoices()) }
     var expenses by remember { mutableStateOf(store.expenses()) }
+    var customers by remember { mutableStateOf(store.customers()) }
     var profile by remember { mutableStateOf(store.businessProfile()) }
     var selectedInvoice by remember { mutableStateOf<Invoice?>(null) }
     var page by remember { mutableStateOf(Page.Home) }
     var dialog by remember { mutableStateOf<String?>(null) }
     var toast by remember { mutableStateOf<String?>(null) }
+    var customersOpen by remember { mutableStateOf(false) }
+    var customerEditorOpen by remember { mutableStateOf(false) }
+    var editingCustomer by remember { mutableStateOf(Customer()) }
+    var customerToDelete by remember { mutableStateOf<Customer?>(null) }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(toast) { toast?.let { snackbar.showSnackbar(it); toast = null } }
 
@@ -106,6 +111,7 @@ private fun KontoKlarApp() {
                 Page.Taxes -> TaxScreen(onAction = { dialog = it })
                 Page.More -> MoreScreen(onAction = { action ->
                     if (action == "Einstellungen" || action == "Unternehmensprofil") dialog = "Unternehmensprofil"
+                    else if (action == "Kunden") customersOpen = true
                     else toast = "$action – wird eingerichtet"
                 })
             }
@@ -117,8 +123,42 @@ private fun KontoKlarApp() {
             onCreateInvoice = { invoice -> invoices = listOf(invoice.copy(number = store.nextInvoiceNumber()) ) + invoices; store.saveInvoices(invoices); toast = "Rechnungsentwurf gespeichert"; dialog = null },
             onCreateExpense = { expense -> expenses = listOf(expense) + expenses; store.saveExpenses(expenses); toast = "Ausgabe gespeichert"; dialog = null },
             profile = profile,
+            customers = customers,
             onSaveProfile = { updated -> profile = updated; store.saveBusinessProfile(updated); toast = "Unternehmensprofil gespeichert"; dialog = null }
         )
+        if (customersOpen) CustomerManagerDialog(
+            customers = customers,
+            onDismiss = { customersOpen = false },
+            onAdd = { editingCustomer = Customer(); customerEditorOpen = true },
+            onEdit = { editingCustomer = it; customerEditorOpen = true },
+            onDelete = { customerToDelete = it }
+        )
+        if (customerEditorOpen) CustomerEditorDialog(
+            customer = editingCustomer,
+            onDismiss = { customerEditorOpen = false },
+            onSave = { saved ->
+                customers = if (customers.any { it.id == saved.id }) customers.map { if (it.id == saved.id) saved else it } else listOf(saved) + customers
+                store.saveCustomers(customers)
+                customerEditorOpen = false
+                toast = "Kunde gespeichert"
+            }
+        )
+        customerToDelete?.let { customer ->
+            AlertDialog(
+                onDismissRequest = { customerToDelete = null },
+                title = { Text("Kunden löschen?") },
+                text = { Text("${customer.name} wird aus deiner lokalen Kundenliste entfernt. Bereits erstellte Rechnungen bleiben unverändert.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        customers = customers.filterNot { it.id == customer.id }
+                        store.saveCustomers(customers)
+                        customerToDelete = null
+                        toast = "Kunde gelöscht"
+                    }) { Text("Löschen", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = { TextButton(onClick = { customerToDelete = null }) { Text("Abbrechen") } }
+            )
+        }
         selectedInvoice?.let { invoice ->
             InvoiceDetailsDialog(
                 invoice = invoice,
@@ -416,9 +456,12 @@ private fun ActionDialog(
     onCreateInvoice: (Invoice) -> Unit,
     onCreateExpense: (Expense) -> Unit,
     profile: BusinessProfile,
+    customers: List<Customer>,
     onSaveProfile: (BusinessProfile) -> Unit
 ) {
     var customer by remember { mutableStateOf("") }
+    var selectedCustomer by remember { mutableStateOf<Customer?>(null) }
+    var customerMenuExpanded by remember { mutableStateOf(false) }
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("Sonstiges") }
@@ -489,7 +532,38 @@ private fun ActionDialog(
                     }
                     Text("Der USt.-Satz wird aktuell nur gespeichert, nicht in Steuerbeträge oder ein rechtsgültiges Rechnungsdokument übernommen.", color = Muted, fontSize = 11.sp)
                 } else if (isInvoice) {
-                    OutlinedTextField(customer, { customer = it; error = null }, label = { Text("Kunde / Rechnungsempfänger") }, singleLine = true)
+                    Box {
+                        OutlinedTextField(
+                            value = customer,
+                            onValueChange = { value ->
+                                customer = value
+                                selectedCustomer = customers.firstOrNull { it.name.equals(value, ignoreCase = true) }
+                                error = null
+                            },
+                            label = { Text("Kunde / Rechnungsempfänger") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            trailingIcon = {
+                                if (customers.isNotEmpty()) IconButton(onClick = { customerMenuExpanded = true }) { Icon(Icons.Default.ArrowDropDown, "Kunden auswählen") }
+                            }
+                        )
+                        DropdownMenu(expanded = customerMenuExpanded, onDismissRequest = { customerMenuExpanded = false }) {
+                            customers.filter { customerQuery -> customerQuery.name.contains(customer, ignoreCase = true) || customer.isBlank() }
+                                .forEach { savedCustomer ->
+                                    DropdownMenuItem(
+                                        text = { Column { Text(savedCustomer.name); Text(listOf(savedCustomer.email, savedCustomer.city).filter(String::isNotBlank).joinToString(" · "), color = Muted, fontSize = 11.sp) } },
+                                        onClick = {
+                                            customer = savedCustomer.name
+                                            selectedCustomer = savedCustomer
+                                            customerMenuExpanded = false
+                                        }
+                                    )
+                                }
+                        }
+                    }
+                    selectedCustomer?.let { saved ->
+                        if (saved.postalAddress.isNotBlank()) Text("Rechnungsanschrift:\n${saved.postalAddress}", color = Muted, fontSize = 11.sp)
+                    }
                     OutlinedTextField(description, { description = it }, label = { Text("Leistung / Beschreibung") }, singleLine = true)
                     OutlinedTextField(amount, { amount = it; error = null }, label = { Text("Betrag inkl. USt. (€)") }, singleLine = true)
                     Text("Zahlungsziel: ${profile.paymentTermsDays} Tage · Nummernpräfix: ${profile.invoicePrefix}", color = Muted, fontSize = 11.sp)
@@ -541,7 +615,7 @@ private fun ActionDialog(
                     isExpense && merchant.isBlank() -> error = "Bitte gib einen Händler an."
                     isExpense && runCatching { LocalDate.parse(expenseDate) }.isFailure -> error = "Bitte gib ein Datum im Format JJJJ-MM-TT an."
                     cents == null -> error = "Bitte gib einen gültigen positiven Betrag an (z. B. 125,50)."
-                    isInvoice -> onCreateInvoice(Invoice(customer = customer.trim(), description = description.trim(), amountCents = cents, dueDate = LocalDate.now().plusDays(profile.paymentTermsDays.toLong()).toString()))
+                    isInvoice -> onCreateInvoice(Invoice(customer = customer.trim(), customerId = selectedCustomer?.id, customerAddress = selectedCustomer?.postalAddress.orEmpty(), customerEmail = selectedCustomer?.email.orEmpty(), description = description.trim(), amountCents = cents, dueDate = LocalDate.now().plusDays(profile.paymentTermsDays.toLong()).toString()))
                     isExpense -> onCreateExpense(Expense(merchant = merchant.trim(), category = category, amountCents = cents, date = expenseDate, note = note.trim(), receiptUri = receiptUri))
                     else -> onSave("$title geöffnet")
                 }

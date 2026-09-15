@@ -28,18 +28,24 @@ fun shareInvoiceDraft(context: Context, invoice: Invoice) {
 
         canvas.drawText("Rechnung an", 42f, 240f, heading)
         canvas.drawText(invoice.customer.take(80), 42f, 265f, normal)
+        var recipientY = 283f
+        (invoice.customerAddress.lines() + invoice.customerEmail).filter(String::isNotBlank).take(3).forEach { line ->
+            canvas.drawText(line.take(76), 42f, recipientY, muted)
+            recipientY += 16f
+        }
         canvas.drawText("Rechnungsdatum: ${invoice.date}", 340f, 240f, normal)
         canvas.drawText("Fällig am: ${invoice.dueDate}", 340f, 265f, normal)
 
-        canvas.drawLine(42f, 310f, 553f, 310f, muted)
-        canvas.drawText("Beschreibung", 42f, 338f, heading)
-        canvas.drawText("Betrag", 455f, 338f, heading)
-        var y = 372f
+        val tableTop = maxOf(310f, recipientY + 12f)
+        canvas.drawLine(42f, tableTop, 553f, tableTop, muted)
+        canvas.drawText("Beschreibung", 42f, tableTop + 28f, heading)
+        canvas.drawText("Betrag", 455f, tableTop + 28f, heading)
+        var y = tableTop + 62f
         wrap(invoice.description, normal, 385f).take(8).forEach { line ->
             canvas.drawText(line, 42f, y, normal)
             y += 19f
         }
-        canvas.drawText(formatEuro(invoice.amountCents), 455f, 372f, normal)
+        canvas.drawText(formatEuro(invoice.amountCents), 455f, tableTop + 62f, normal)
         y = maxOf(y + 30f, 430f)
         canvas.drawLine(42f, y, 553f, y, muted)
         y += 34f

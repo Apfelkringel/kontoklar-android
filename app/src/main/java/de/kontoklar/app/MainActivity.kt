@@ -39,11 +39,11 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.time.LocalDate
 
-private val Ink = Color(0xFF172823)
-private val Forest = Color(0xFF176B52)
-private val Mint = Color(0xFFE7F3EC)
-private val Canvas = Color(0xFFF7F8F5)
-private val Muted = Color(0xFF78827D)
+internal val Ink = Color(0xFF172823)
+internal val Forest = Color(0xFF176B52)
+internal val Mint = Color(0xFFE7F3EC)
+internal val Canvas = Color(0xFFF7F8F5)
+internal val Muted = Color(0xFF78827D)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,7 +62,8 @@ private enum class Page(val title: String, val icon: ImageVector) {
     Invoices("Rechnungen", Icons.Default.ReceiptLong),
     Expenses("Ausgaben", Icons.Default.Payments),
     Taxes("Steuern", Icons.Default.AccountBalance),
-    More("Mehr", Icons.Default.Menu)
+    More("Mehr", Icons.Default.Menu),
+    Banking("Banking", Icons.Default.AccountBalanceWallet)
 }
 
 private data class Entry(val title: String, val subtitle: String, val amount: String, val icon: ImageVector, val tint: Color)
@@ -73,6 +74,7 @@ private fun KontoKlarApp() {
     val store = remember { LocalData(context) }
     var invoices by remember { mutableStateOf(store.invoices()) }
     var expenses by remember { mutableStateOf(store.expenses()) }
+    var bankTransactions by remember { mutableStateOf(store.bankTransactions()) }
     var customers by remember { mutableStateOf(store.customers()) }
     var offers by remember { mutableStateOf(store.offers()) }
     var products by remember { mutableStateOf(store.products()) }
@@ -115,6 +117,27 @@ private fun KontoKlarApp() {
     val backupImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->
         if (source != null) restoreBackupUri = source
     }
+    val bankStatementImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->
+        if (source != null) scope.launch {
+            runCatching {
+                runCatching { context.contentResolver.takePersistableUriPermission(source, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(source)?.use(::parseCamt053)
+                        ?: error("Der Kontoauszug kann nicht gelesen werden.")
+                }
+            }.onSuccess { statement ->
+                val existingIds = bankTransactions.mapTo(hashSetOf(), BankTransaction::id)
+                val newTransactions = statement.transactions.filterNot { it.id in existingIds }
+                if (newTransactions.isEmpty()) toast = "Alle Buchungen aus diesem Kontoauszug wurden bereits importiert."
+                else {
+                    bankTransactions = newTransactions + bankTransactions
+                    store.saveBankTransactions(bankTransactions)
+                    val accountText = statement.accountIbans.singleOrNull()?.takeLast(4)?.let { " · Konto ••••$it" }.orEmpty()
+                    toast = "${newTransactions.size} Bankumsätze importiert$accountText"
+                }
+            }.onFailure { toast = it.message ?: "Der Kontoauszug konnte nicht importiert werden." }
+        }
+    }
     val incomingInvoiceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->
         if (source != null) scope.launch {
             runCatching {
@@ -155,9 +178,9 @@ private fun KontoKlarApp() {
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
-                Page.entries.forEach { item ->
+                Page.entries.filterNot { it == Page.Banking }.forEach { item ->
                     NavigationBarItem(
-                        selected = page == item,
+                        selected = page == item || (page == Page.Banking && item == Page.More),
                         onClick = { page = item },
                         icon = { Icon(item.icon, contentDescription = item.title) },
                         label = { Text(item.title, fontSize = 10.sp) },
@@ -177,14 +200,14 @@ private fun KontoKlarApp() {
         Column(Modifier.fillMaxSize().padding(padding)) {
             Header(page.title)
             when (page) {
-                Page.Home -> Dashboard(invoices, expenses, onNavigate = { page = it })
+                Page.Home -> Dashboard(invoices, expenses, bankTransactions, onNavigate = { page = it })
                 Page.Invoices -> InvoiceScreen(invoices, onAction = { dialog = it }, onSelect = { selectedInvoice = it })
                 Page.Expenses -> ExpenseScreen(expenses, onAction = { action ->
                     if (action == "E-Rechnung empfangen") incomingInvoiceLauncher.launch(arrayOf("*/*")) else dialog = action
                 }, onSelect = { selectedExpense = it })
                 Page.Taxes -> TaxScreen(invoices = invoices, expenses = expenses, onAction = { action ->
                     when (action) {
-                        "Steuerberater teilen" -> runCatching { shareBookkeepingCsv(context, invoices, expenses) }
+                        "Steuerberater teilen" -> runCatching { shareBookkeepingCsv(context, invoices, expenses, bankTransactions) }
                             .onFailure { toast = it.message ?: "Export konnte nicht erstellt werden." }
                         "Steuerprofil" -> dialog = "Unternehmensprofil"
                         else -> dialog = action
@@ -192,14 +215,30 @@ private fun KontoKlarApp() {
                 })
                 Page.More -> MoreScreen(onAction = { action ->
                     if (action == "Einstellungen" || action == "Unternehmensprofil") dialog = "Unternehmensprofil"
+                    else if (action == "Bankkonten & Accountable Banking") page = Page.Banking
                     else if (action == "Kunden") customersOpen = true
                     else if (action == "Angebote") offersOpen = true
                     else if (action == "Produkte & Dienstleistungen") productsOpen = true
                     else if (action == "Dokumente") documentsOpen = true
-                    else if (action == "Mit Buchhalter teilen") runCatching { shareBookkeepingCsv(context, invoices, expenses) }
+                    else if (action == "Mit Buchhalter teilen") runCatching { shareBookkeepingCsv(context, invoices, expenses, bankTransactions) }
                         .onFailure { toast = it.message ?: "Export konnte nicht erstellt werden." }
                     else toast = "$action – wird eingerichtet"
                 })
+                Page.Banking -> BankingScreen(
+                    transactions = bankTransactions,
+                    invoices = invoices,
+                    onImportStatement = { bankStatementImportLauncher.launch(arrayOf("application/xml", "text/xml", "application/camt.053+xml", "*/*")) },
+                    onMatchInvoice = { transaction, invoice ->
+                        if (transaction.amountCents > 0 && invoice.status != "Bezahlt" && invoice.status != "Entwurf") {
+                            invoices = invoices.upsertInvoice(invoice.copy(status = "Bezahlt"))
+                            store.saveInvoices(invoices)
+                            bankTransactions = bankTransactions.map { if (it.id == transaction.id) it.copy(matchedInvoiceId = invoice.id) else it }
+                            store.saveBankTransactions(bankTransactions)
+                            InvoiceReminderScheduler.cancel(context, invoice.id)
+                            toast = "Zahlung ${invoice.number} zugeordnet und Rechnung als bezahlt markiert"
+                        }
+                    }
+                )
             }
         }
         if (dialog != null) ActionDialog(
@@ -288,6 +327,7 @@ private fun KontoKlarApp() {
                             result.onSuccess {
                                 invoices = store.invoices()
                                 expenses = store.expenses()
+                                bankTransactions = store.bankTransactions()
                                 customers = store.customers()
                                 offers = store.offers()
                                 products = store.products()
@@ -490,7 +530,7 @@ private fun Header(title: String) {
 }
 
 @Composable
-private fun Dashboard(invoices: List<Invoice>, expenses: List<Expense>, onNavigate: (Page) -> Unit) {
+private fun Dashboard(invoices: List<Invoice>, expenses: List<Expense>, bankTransactions: List<BankTransaction>, onNavigate: (Page) -> Unit) {
     val invoiceTotal = invoices.sumOf { it.amountCents }
     val expenseTotal = expenses.sumOf { it.amountCents }
     LazyColumn(contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 90.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -508,7 +548,7 @@ private fun Dashboard(invoices: List<Invoice>, expenses: List<Expense>, onNaviga
                     HorizontalDivider(color = Color.White.copy(alpha = .2f))
                     Spacer(Modifier.height(15.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Balance("Bankkonto", "Nicht verbunden")
+                        Balance("Bankumsätze", "${bankTransactions.size} importiert")
                         Balance("Ausgaben erfasst", formatEuro(expenseTotal))
                     }
                 }
@@ -634,7 +674,7 @@ private fun DataManagementDialog(onDismiss: () -> Unit, onExport: () -> Unit, on
         title = { Text("Dokumente & Datensicherung", color = Ink, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Erstelle eine lokale ZIP-Sicherung mit Rechnungen, Angeboten, Kunden, Ausgaben, Profilangaben und angehängten Belegen. Die Datei wird nur am gewählten Speicherort abgelegt. Sie ist nicht verschlüsselt und enthält vertrauliche Geschäfts- und Kundendaten – bewahre sie geschützt auf.", color = Muted, fontSize = 13.sp)
+        Text("Erstelle eine lokale ZIP-Sicherung mit Rechnungen, Angeboten, Kunden, Ausgaben, importierten Bankumsätzen, Profilangaben und angehängten Belegen. Die Datei wird nur am gewählten Speicherort abgelegt. Sie ist nicht verschlüsselt und enthält vertrauliche Geschäfts- und Kundendaten – bewahre sie geschützt auf.", color = Muted, fontSize = 13.sp)
                 Button(onClick = onExport, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Forest)) {
                     Icon(Icons.Default.Backup, null); Spacer(Modifier.width(8.dp)); Text("Sicherung exportieren")
                 }

@@ -7,7 +7,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.time.LocalDate
 
-fun shareBookkeepingCsv(context: Context, invoices: List<Invoice>, expenses: List<Expense>) {
+fun shareBookkeepingCsv(context: Context, invoices: List<Invoice>, expenses: List<Expense>, bankTransactions: List<BankTransaction> = emptyList()) {
     val directory = File(context.cacheDir, "exports").apply { check(isDirectory || mkdirs()) { "Exportordner ist nicht verfügbar." } }
     val file = File(directory, "KontoKlar-Buchungen-${LocalDate.now()}.csv")
     FileOutputStream(file).bufferedWriter(Charsets.UTF_8).use { writer ->
@@ -18,6 +18,15 @@ fun shareBookkeepingCsv(context: Context, invoices: List<Invoice>, expenses: Lis
         }
         expenses.sortedBy(Expense::date).forEach { expense ->
             writer.appendLine(listOf("Ausgabe", "", expense.merchant, expense.category, expense.date, "", centsAsGermanDecimal(expense.amountCents), "Erfasst", expense.note).joinToString(";") { csvField(it) })
+        }
+        bankTransactions.sortedBy(BankTransaction::date).forEach { transaction ->
+            val accountHint = transaction.accountIban.takeLast(4).takeIf(String::isNotBlank)?.let { "Konto ••••$it" }.orEmpty()
+            writer.appendLine(listOf(
+                "Bankumsatz", transaction.reference, transaction.counterparty, transaction.description,
+                transaction.date, "", centsAsGermanDecimal(kotlin.math.abs(transaction.amountCents)),
+                if (transaction.amountCents > 0) "Eingang" else "Ausgang",
+                listOf(accountHint, transaction.matchedInvoiceId?.let { "Rechnungs-ID $it" }.orEmpty()).filter(String::isNotBlank).joinToString(" · ")
+            ).joinToString(";") { csvField(it) })
         }
     }
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)

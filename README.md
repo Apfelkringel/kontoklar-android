@@ -6,7 +6,9 @@ Native Android app prototype built with Kotlin and Jetpack Compose. The app uses
 
 - Dashboard with totals derived from locally saved invoices and expenses.
 - Create invoice drafts with customer, description, amount, and a 14-day due date.
+- Sequential invoice draft numbers, locally persisted invoice states (draft/sent/paid), PDF draft generation, and Android share sheet.
 - Manually record expenses with merchant, amount, category, date, and note.
+- Attach a local image or PDF receipt to an expense.
 - Persist those records locally with Android SharedPreferences.
 - German and dot-decimal Euro input parsing, with unit tests.
 - Navigation for invoices, expenses, tax overview, and account/settings areas.
@@ -16,7 +18,7 @@ Native Android app prototype built with Kotlin and Jetpack Compose. The app uses
 
 ## Not implemented yet
 
-There is no account/login or cloud sync, bank/PSD2 connection, actual automatic transfer of tax reserves, receipt OCR/camera import, invoice PDF/e-invoice transmission, tax calculation or submission, notifications, or accountant collaboration. The tax screen is informational and does not submit declarations or provide binding calculations.
+There is no account/login or cloud sync, bank/PSD2 connection, actual automatic transfer of tax reserves, receipt OCR/camera capture, legally complete invoice export or e-invoice transmission, tax calculation or submission, notifications, or accountant collaboration. Invoice PDFs are clearly marked as incomplete drafts and must not be used as tax documents. The tax screen is informational and does not submit declarations or provide binding calculations.
 
 ## Publishing an update
 

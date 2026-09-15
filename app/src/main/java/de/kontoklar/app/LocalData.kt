@@ -8,6 +8,7 @@ import java.util.UUID
 
 data class Invoice(
     val id: String = UUID.randomUUID().toString(),
+    val number: String = "",
     val customer: String,
     val description: String,
     val amountCents: Long,
@@ -22,18 +23,24 @@ data class Expense(
     val category: String,
     val amountCents: Long,
     val date: String = LocalDate.now().toString(),
-    val note: String = ""
+    val note: String = "",
+    val receiptUri: String? = null
 )
 
 class LocalData(context: Context) {
     private val prefs = context.getSharedPreferences("kontoklar_data_v1", Context.MODE_PRIVATE)
 
-    fun invoices(): List<Invoice> = read("invoices") { Invoice(it.optString("id", UUID.randomUUID().toString()), it.optString("customer", ""), it.optString("description", ""), it.optLong("amountCents", 0), it.optString("date", ""), it.optString("dueDate", ""), it.optString("status", "Entwurf")) }
+    fun invoices(): List<Invoice> = read("invoices") { Invoice(id = it.optString("id", UUID.randomUUID().toString()), number = it.optString("number", ""), customer = it.optString("customer", ""), description = it.optString("description", ""), amountCents = it.optLong("amountCents", 0), date = it.optString("date", ""), dueDate = it.optString("dueDate", ""), status = it.optString("status", "Entwurf")) }
 
-    fun expenses(): List<Expense> = read("expenses") { Expense(it.optString("id", UUID.randomUUID().toString()), it.optString("merchant", ""), it.optString("category", "Sonstiges"), it.optLong("amountCents", 0), it.optString("date", ""), it.optString("note", "")) }
+    fun expenses(): List<Expense> = read("expenses") { Expense(id = it.optString("id", UUID.randomUUID().toString()), merchant = it.optString("merchant", ""), category = it.optString("category", "Sonstiges"), amountCents = it.optLong("amountCents", 0), date = it.optString("date", ""), note = it.optString("note", ""), receiptUri = it.optString("receiptUri").takeIf(String::isNotBlank)) }
 
-    fun saveInvoices(values: List<Invoice>) = write("invoices", values.map { JSONObject().put("id", it.id).put("customer", it.customer).put("description", it.description).put("amountCents", it.amountCents).put("date", it.date).put("dueDate", it.dueDate).put("status", it.status) })
-    fun saveExpenses(values: List<Expense>) = write("expenses", values.map { JSONObject().put("id", it.id).put("merchant", it.merchant).put("category", it.category).put("amountCents", it.amountCents).put("date", it.date).put("note", it.note) })
+    fun saveInvoices(values: List<Invoice>) = write("invoices", values.map { JSONObject().put("id", it.id).put("number", it.number).put("customer", it.customer).put("description", it.description).put("amountCents", it.amountCents).put("date", it.date).put("dueDate", it.dueDate).put("status", it.status) })
+    fun saveExpenses(values: List<Expense>) = write("expenses", values.map { JSONObject().put("id", it.id).put("merchant", it.merchant).put("category", it.category).put("amountCents", it.amountCents).put("date", it.date).put("note", it.note).put("receiptUri", it.receiptUri) })
+
+    fun nextInvoiceNumber(): String {
+        val year = LocalDate.now().year
+        return nextInvoiceNumber(year, invoices().map { it.number })
+    }
 
     private fun <T> read(key: String, decode: (JSONObject) -> T): List<T> {
         val raw = prefs.getString(key, null) ?: return emptyList()
@@ -46,6 +53,12 @@ class LocalData(context: Context) {
     private fun write(key: String, values: List<JSONObject>) {
         prefs.edit().putString(key, JSONArray(values).toString()).apply()
     }
+}
+
+fun nextInvoiceNumber(year: Int, existingNumbers: List<String>): String {
+    val prefix = "RE-$year-"
+    val next = existingNumbers.mapNotNull { number -> number.takeIf { it.startsWith(prefix) }?.removePrefix(prefix)?.toIntOrNull() }.maxOrNull()?.plus(1) ?: 1
+    return "$prefix${next.toString().padStart(4, '0')}"
 }
 
 fun parseEuroCents(raw: String): Long? {

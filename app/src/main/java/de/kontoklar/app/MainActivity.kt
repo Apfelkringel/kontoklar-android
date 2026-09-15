@@ -8,7 +8,9 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,7 +27,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -59,6 +60,7 @@ private fun KontoKlarApp() {
     val store = remember { LocalData(context) }
     var invoices by remember { mutableStateOf(store.invoices()) }
     var expenses by remember { mutableStateOf(store.expenses()) }
+    var selectedInvoice by remember { mutableStateOf<Invoice?>(null) }
     var page by remember { mutableStateOf(Page.Home) }
     var dialog by remember { mutableStateOf<String?>(null) }
     var toast by remember { mutableStateOf<String?>(null) }
@@ -93,7 +95,7 @@ private fun KontoKlarApp() {
             Header(page.title)
             when (page) {
                 Page.Home -> Dashboard(invoices, expenses, onNavigate = { page = it })
-                Page.Invoices -> InvoiceScreen(invoices, onAction = { dialog = it })
+                Page.Invoices -> InvoiceScreen(invoices, onAction = { dialog = it }, onSelect = { selectedInvoice = it })
                 Page.Expenses -> ExpenseScreen(expenses, onAction = { dialog = it })
                 Page.Taxes -> TaxScreen(onAction = { dialog = it })
                 Page.More -> MoreScreen(onAction = { toast = "$it – wird eingerichtet" })
@@ -103,9 +105,22 @@ private fun KontoKlarApp() {
             title = dialog!!,
             onDismiss = { dialog = null },
             onSave = { toast = it; dialog = null },
-            onCreateInvoice = { invoice -> invoices = listOf(invoice) + invoices; store.saveInvoices(invoices); toast = "Rechnungsentwurf gespeichert"; dialog = null },
+            onCreateInvoice = { invoice -> invoices = listOf(invoice.copy(number = store.nextInvoiceNumber()) ) + invoices; store.saveInvoices(invoices); toast = "Rechnungsentwurf gespeichert"; dialog = null },
             onCreateExpense = { expense -> expenses = listOf(expense) + expenses; store.saveExpenses(expenses); toast = "Ausgabe gespeichert"; dialog = null }
         )
+        selectedInvoice?.let { invoice ->
+            InvoiceDetailsDialog(
+                invoice = invoice,
+                onDismiss = { selectedInvoice = null },
+                onSharePdf = { runCatching { shareInvoiceDraft(context, invoice) }.onFailure { toast = "PDF konnte nicht erstellt werden: ${it.message}" } },
+                onStatusChange = { status ->
+                    invoices = invoices.map { if (it.id == invoice.id) it.copy(status = status) else it }
+                    store.saveInvoices(invoices)
+                    selectedInvoice = null
+                    toast = "Rechnungsstatus: $status"
+                }
+            )
+        }
     }
 }
 
@@ -182,14 +197,14 @@ private fun Dashboard(invoices: List<Invoice>, expenses: List<Expense>, onNaviga
 }
 
 @Composable
-private fun InvoiceScreen(invoices: List<Invoice>, onAction: (String) -> Unit) {
+private fun InvoiceScreen(invoices: List<Invoice>, onAction: (String) -> Unit, onSelect: (Invoice) -> Unit) {
     LazyColumn(contentPadding = PaddingValues(18.dp, 14.dp, 18.dp, 90.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { MetricCard("Offen", formatEuro(invoices.filter { it.status != "Bezahlt" }.sumOf { it.amountCents }), "${invoices.count { it.status != "Bezahlt" }} Rechnungen", Icons.Default.Schedule, Modifier.weight(1f)); MetricCard("Gesamt", formatEuro(invoices.sumOf { it.amountCents }), "${invoices.size} Rechnungen", Icons.Default.ShowChart, Modifier.weight(1f)) } }
         item { SectionTitle("Alle Rechnungen", "2026") }
         if (invoices.isEmpty()) item { EmptyState("Noch keine Rechnungen", "Tippe auf +, um deinen ersten Entwurf anzulegen.") }
         items(invoices, key = { it.id }) { invoice ->
             val icon = if (invoice.status == "Bezahlt") Icons.Default.CheckCircle else Icons.Default.Description
-            EntryRow(Entry(invoice.customer, "${invoice.status} · fällig ${invoice.dueDate}", formatEuro(invoice.amountCents), icon, if (invoice.status == "Bezahlt") Mint else Color(0xFFE6F2EB)), onClick = { onAction("Rechnung: ${invoice.customer}") })
+            EntryRow(Entry(invoice.customer, "${invoice.number} · ${invoice.status} · fällig ${invoice.dueDate}", formatEuro(invoice.amountCents), icon, if (invoice.status == "Bezahlt") Mint else Color(0xFFE6F2EB)), onClick = { onSelect(invoice) })
         }
         item { OutlinedButton(onClick = { onAction("E-Rechnung empfangen") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Inbox, null); Spacer(Modifier.width(8.dp)); Text("E-Rechnung empfangen") } }
     }
@@ -202,7 +217,7 @@ private fun ExpenseScreen(expenses: List<Expense>, onAction: (String) -> Unit) {
         item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { MetricCard("Ausgaben", formatEuro(expenses.sumOf { it.amountCents }), "${expenses.size} erfasst", Icons.Default.Payments, Modifier.weight(1f)); MetricCard("Noch zu prüfen", "${expenses.size}", "Belege", Icons.Default.ErrorOutline, Modifier.weight(1f)) } }
         item { SectionTitle("Letzte Ausgaben", "Alle ansehen") }
         if (expenses.isEmpty()) item { EmptyState("Noch keine Ausgaben", "Erfasse einen Beleg oder füge eine Ausgabe hinzu.") }
-        items(expenses, key = { it.id }) { expense -> EntryRow(Entry(expense.merchant, "${expense.category} · ${expense.date}", "−${formatEuro(expense.amountCents)}", Icons.Default.Receipt, Color(0xFFFFF1E5)), onClick = { onAction("Ausgabe: ${expense.merchant}") }) }
+        items(expenses, key = { it.id }) { expense -> EntryRow(Entry(expense.merchant, "${expense.category} · ${expense.date}${if (expense.receiptUri != null) " · Beleg angehängt" else ""}", "−${formatEuro(expense.amountCents)}", Icons.Default.Receipt, Color(0xFFFFF1E5)), onClick = { onAction("Ausgabe: ${expense.merchant}") }) }
     }
 }
 
@@ -350,6 +365,39 @@ private fun EmptyState(title: String, body: String) {
 }
 
 @Composable
+private fun InvoiceDetailsDialog(
+    invoice: Invoice,
+    onDismiss: () -> Unit,
+    onSharePdf: () -> Unit,
+    onStatusChange: (String) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(invoice.number.ifBlank { "Rechnung" }, color = Ink, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(invoice.customer, color = Ink, fontWeight = FontWeight.SemiBold)
+                Text(invoice.description, color = Muted)
+                Text("Betrag: ${formatEuro(invoice.amountCents)}", color = Ink)
+                Text("Datum: ${invoice.date} · fällig: ${invoice.dueDate}", color = Muted, fontSize = 12.sp)
+                Text("Status: ${invoice.status}", color = Forest, fontWeight = FontWeight.SemiBold)
+                Text("Das PDF wird ausdrücklich als unvollständiger Entwurf gekennzeichnet.", color = Muted, fontSize = 11.sp)
+                OutlinedButton(onClick = onSharePdf, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.PictureAsPdf, null); Spacer(Modifier.width(8.dp)); Text("Entwurfs-PDF teilen")
+                }
+                if (invoice.status == "Entwurf") {
+                    Button(onClick = { onStatusChange("Versendet") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Forest)) { Text("Als versendet markieren") }
+                } else if (invoice.status == "Versendet") {
+                    Button(onClick = { onStatusChange("Bezahlt") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Forest)) { Text("Als bezahlt markieren") }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Schließen", color = Forest) } },
+        containerColor = Color.White
+    )
+}
+
+@Composable
 private fun ActionDialog(
     title: String,
     onDismiss: () -> Unit,
@@ -365,8 +413,16 @@ private fun ActionDialog(
     var note by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var categoryExpanded by remember { mutableStateOf(false) }
+    var receiptUri by remember { mutableStateOf<String?>(null) }
     val isInvoice = title.contains("Rechnung", true)
     val isExpense = title.contains("Beleg", true) || title.contains("Ausgabe", true)
+    val context = LocalContext.current
+    val documentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            receiptUri = uri.toString()
+        }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title, color = Ink, fontWeight = FontWeight.Bold) },
@@ -389,7 +445,10 @@ private fun ActionDialog(
                         }
                     }
                     OutlinedTextField(note, { note = it }, label = { Text("Notiz (optional)") }, singleLine = true)
-                    Text("Die Belegerkennung und Bankzuordnung sind noch nicht verbunden. Du kannst die Ausgabe hier manuell erfassen.", color = Muted, fontSize = 11.sp)
+                    OutlinedButton(onClick = { documentPicker.launch(arrayOf("image/*", "application/pdf")) }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(if (receiptUri == null) Icons.Default.AttachFile else Icons.Default.CheckCircle, null); Spacer(Modifier.width(8.dp)); Text(if (receiptUri == null) "Foto oder PDF-Beleg anhängen" else "Beleg angehängt · ändern")
+                    }
+                    Text("Der Beleg wird lokal verknüpft. OCR-Auslesen und Bankabgleich sind noch nicht aktiv.", color = Muted, fontSize = 11.sp)
                 } else {
                     Text("Diese Funktion benötigt noch eine externe Anbieteranbindung. Deine Daten werden bis dahin nicht an Dritte gesendet.", color = Muted, fontSize = 13.sp)
                     OutlinedTextField(note, { note = it }, label = { Text("Notiz (optional)") }, singleLine = true)
@@ -406,7 +465,7 @@ private fun ActionDialog(
                     isExpense && merchant.isBlank() -> error = "Bitte gib einen Händler an."
                     cents == null -> error = "Bitte gib einen gültigen positiven Betrag an (z. B. 125,50)."
                     isInvoice -> onCreateInvoice(Invoice(customer = customer.trim(), description = description.trim(), amountCents = cents))
-                    isExpense -> onCreateExpense(Expense(merchant = merchant.trim(), category = category, amountCents = cents, note = note.trim()))
+                    isExpense -> onCreateExpense(Expense(merchant = merchant.trim(), category = category, amountCents = cents, note = note.trim(), receiptUri = receiptUri))
                     else -> onSave("$title geöffnet")
                 }
             }) { Text(if (isInvoice) "Entwurf speichern" else if (isExpense) "Ausgabe speichern" else "Weiter", color = Forest) }

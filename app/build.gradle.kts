@@ -41,6 +41,7 @@ android {
         applicationId = "de.kontoklar.app"
         minSdk = 26
         targetSdk = 35
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = 38
         versionName = "0.38.0"
         val bankingApiBaseUrl = providers.gradleProperty("KONTOKLAR_BANKING_API_BASE_URL").orElse("").get().trimEnd('/')
@@ -75,5 +76,7 @@ dependencies {
     implementation("net.sf.kxml:kxml2:2.3.0")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

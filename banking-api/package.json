@@ -6,7 +6,8 @@
     "dev": "wrangler dev",
     "check": "wrangler deploy --dry-run && tsc --noEmit && npm test",
     "test": "node --experimental-strip-types --test test/*.test.ts",
-    "types": "wrangler types"
+    "types": "wrangler types",
+    "deploy:sandbox:first": "node scripts/deploy-sandbox-first.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

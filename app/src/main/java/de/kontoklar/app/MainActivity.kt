@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
@@ -96,6 +97,9 @@ private fun KontoKlarApp() {
     var productToDelete by remember { mutableStateOf<Product?>(null) }
     var documentsOpen by remember { mutableStateOf(false) }
     var restoreBackupUri by remember { mutableStateOf<Uri?>(null) }
+    var backupPasswordDialog by remember { mutableStateOf(false) }
+    var backupPasswordForRestore by remember { mutableStateOf(false) }
+    var backupPassword by remember { mutableStateOf("") }
     var customerEditorOpen by remember { mutableStateOf(false) }
     var editingCustomer by remember { mutableStateOf(Customer()) }
     var customerToDelete by remember { mutableStateOf<Customer?>(null) }
@@ -108,12 +112,15 @@ private fun KontoKlarApp() {
     var incomingInvoiceUri by remember { mutableStateOf<Uri?>(null) }
     var incomingInvoiceError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val backupExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { destination ->
+    val backupExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { destination ->
         if (destination != null) scope.launch {
-            runCatching { withContext(Dispatchers.IO) { exportBackup(context, destination, store) } }
+            val password = backupPassword.toCharArray()
+            backupPassword = ""
+            runCatching { withContext(Dispatchers.IO) { exportBackup(context, destination, store, password) } }
                 .onSuccess { toast = "Sicherung mit ${expenses.size} Ausgaben und ${invoices.size} Rechnungen erstellt" }
                 .onFailure { toast = it.message ?: "Sicherung konnte nicht erstellt werden." }
-        }
+                .also { password.fill('\u0000') }
+        } else backupPassword = ""
     }
     val backupImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->
         if (source != null) restoreBackupUri = source
@@ -312,19 +319,48 @@ private fun KontoKlarApp() {
         }
         if (documentsOpen) DataManagementDialog(
             onDismiss = { documentsOpen = false },
-            onExport = { documentsOpen = false; backupExportLauncher.launch("KontoKlar-Sicherung-${LocalDate.now()}.zip") },
-            onImport = { documentsOpen = false; backupImportLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed")) }
+            onExport = { documentsOpen = false; backupPasswordForRestore = false; backupPassword = ""; backupPasswordDialog = true },
+            onImport = { documentsOpen = false; backupImportLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream", "*/*")) }
         )
         restoreBackupUri?.let { source ->
             AlertDialog(
                 onDismissRequest = { restoreBackupUri = null },
                 title = { Text("Sicherung wiederherstellen?") },
-                text = { Text("Die Sicherung ersetzt deine lokalen Rechnungen, Angebote, Kunden, Ausgaben und das Unternehmensprofil. Ein angehängter Beleg wird mit übernommen. Erstelle vorher eine aktuelle Sicherung, wenn du vorhandene Daten behalten möchtest.") },
+                text = { Text("Die Sicherung ersetzt deine lokalen Rechnungen, Angebote, Kunden, Ausgaben und das Unternehmensprofil. Verschlüsselte Sicherungen benötigen das Erstellpasswort. Ein angehängter Beleg wird mit übernommen. Erstelle vorher eine aktuelle Sicherung, wenn du vorhandene Daten behalten möchtest.") },
                 confirmButton = {
                     TextButton(onClick = {
-                        restoreBackupUri = null
-                        scope.launch {
-                            val result = runCatching { withContext(Dispatchers.IO) { restoreBackup(context, source, store) } }
+                        backupPassword = ""
+                        backupPasswordForRestore = true
+                        backupPasswordDialog = true
+                    }) { Text("Weiter", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = { TextButton(onClick = { restoreBackupUri = null }) { Text("Abbrechen") } }
+            )
+        }
+        if (backupPasswordDialog) AlertDialog(
+            onDismissRequest = { backupPasswordDialog = false; backupPassword = "" },
+            title = { Text(if (backupPasswordForRestore) "Sicherungspasswort" else "Sicherung verschlüsseln") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(if (backupPasswordForRestore) "Gib das Passwort ein, mit dem die Sicherung erstellt wurde. Bei einer älteren, unverschlüsselten ZIP-Datei lasse das Feld leer." else "Wähle ein Passwort mit mindestens 12 Zeichen. Ohne dieses Passwort lässt sich die Sicherung nicht wiederherstellen.")
+                    OutlinedTextField(backupPassword, { backupPassword = it }, label = { Text("Passwort") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (!backupPasswordForRestore && backupPassword.length < 12) {
+                        toast = "Das Passwort muss mindestens 12 Zeichen lang sein."
+                    } else if (backupPasswordForRestore) {
+                        val source = restoreBackupUri
+                        if (source == null) {
+                            backupPasswordDialog = false
+                        } else scope.launch {
+                            val password = backupPassword.toCharArray()
+                            backupPassword = ""
+                            backupPasswordDialog = false
+                            restoreBackupUri = null
+                            val result = runCatching { withContext(Dispatchers.IO) { restoreBackup(context, source, store, password) } }
+                            password.fill('\u0000')
                             result.onSuccess {
                                 invoices = store.invoices()
                                 expenses = store.expenses()
@@ -336,11 +372,14 @@ private fun KontoKlarApp() {
                                 toast = "Sicherung erfolgreich wiederhergestellt"
                             }.onFailure { toast = it.message ?: "Sicherung konnte nicht wiederhergestellt werden." }
                         }
-                    }) { Text("Wiederherstellen", color = MaterialTheme.colorScheme.error) }
-                },
-                dismissButton = { TextButton(onClick = { restoreBackupUri = null }) { Text("Abbrechen") } }
-            )
-        }
+                    } else {
+                        backupPasswordDialog = false
+                        backupExportLauncher.launch("KontoKlar-Sicherung-${LocalDate.now()}.kkbackup")
+                    }
+                }) { Text(if (backupPasswordForRestore) "Wiederherstellen" else "Sicherung erstellen", color = if (backupPasswordForRestore) MaterialTheme.colorScheme.error else Forest) }
+            },
+            dismissButton = { TextButton(onClick = { backupPasswordDialog = false; backupPassword = "" }) { Text("Abbrechen") } }
+        )
         if (customerEditorOpen) CustomerEditorDialog(
             customer = editingCustomer,
             onDismiss = { customerEditorOpen = false },
@@ -684,7 +723,7 @@ private fun DataManagementDialog(onDismiss: () -> Unit, onExport: () -> Unit, on
         title = { Text("Dokumente & Datensicherung", color = Ink, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Erstelle eine lokale ZIP-Sicherung mit Rechnungen, Angeboten, Kunden, Ausgaben, importierten Bankumsätzen, Profilangaben und angehängten Belegen. Die Datei wird nur am gewählten Speicherort abgelegt. Sie ist nicht verschlüsselt und enthält vertrauliche Geschäfts- und Kundendaten – bewahre sie geschützt auf.", color = Muted, fontSize = 13.sp)
+        Text("Erstelle eine passwortgeschützte Sicherung mit Rechnungen, Angeboten, Kunden, Ausgaben, importierten Bankumsätzen, Profilangaben und Belegen. Die Verschlüsselung schützt die Datei auch außerhalb dieses Geräts. Bewahre das Passwort sicher auf – es kann nicht wiederhergestellt werden. Ältere unverschlüsselte ZIP-Sicherungen lassen sich weiterhin importieren.", color = Muted, fontSize = 13.sp)
                 Button(onClick = onExport, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Forest)) {
                     Icon(Icons.Default.Backup, null); Spacer(Modifier.width(8.dp)); Text("Sicherung exportieren")
                 }

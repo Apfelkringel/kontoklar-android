@@ -9,6 +9,7 @@ import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.PushbackInputStream
 import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
@@ -19,7 +20,7 @@ private const val MAX_RECEIPT_BYTES = 60L * 1024 * 1024
 private const val MAX_BACKUP_BYTES = 300L * 1024 * 1024
 private val backupAttachmentPattern = Regex("attachments/[a-fA-F0-9-]{1,64}\\.(jpg|jpeg|png|webp|pdf|xml|bin)")
 
-fun exportBackup(context: Context, destination: Uri, store: LocalData) {
+fun exportBackup(context: Context, destination: Uri, store: LocalData, password: CharArray) {
     val snapshot = store.exportSnapshot()
     val expenseJson = snapshot.getJSONArray("expenses")
     val attachments = mutableListOf<Pair<String, Uri>>()
@@ -35,7 +36,7 @@ fun exportBackup(context: Context, destination: Uri, store: LocalData) {
     }
     val output = context.contentResolver.openOutputStream(destination, "w")
         ?: error("Die Sicherungsdatei kann nicht geschrieben werden.")
-    ZipOutputStream(BufferedOutputStream(output)).use { zip ->
+    ZipOutputStream(BufferedOutputStream(encryptedBackupOutput(output, password))).use { zip ->
         var totalBytes = 0L
         zip.putNextEntry(ZipEntry("data.json"))
         val jsonBytes = snapshot.toString().toByteArray(Charsets.UTF_8)
@@ -67,7 +68,7 @@ fun exportBackup(context: Context, destination: Uri, store: LocalData) {
     }
 }
 
-fun restoreBackup(context: Context, source: Uri, store: LocalData) {
+fun restoreBackup(context: Context, source: Uri, store: LocalData, password: CharArray = charArrayOf()) {
     val restoreDirectory = File(context.cacheDir, "restore-${UUID.randomUUID()}").apply {
         check(mkdirs()) { "Temporärer Sicherungsspeicher ist nicht verfügbar." }
     }
@@ -79,7 +80,15 @@ fun restoreBackup(context: Context, source: Uri, store: LocalData) {
         var totalBytes = 0L
         val input = context.contentResolver.openInputStream(source)
             ?: error("Die Sicherungsdatei kann nicht gelesen werden.")
-        ZipInputStream(BufferedInputStream(input)).use { zip ->
+        val buffered = PushbackInputStream(BufferedInputStream(input), 8)
+        val prefix = ByteArray(8)
+        val prefixLength = buffered.read(prefix)
+        require(prefixLength == 8) { "Die Sicherungsdatei ist zu kurz." }
+        buffered.unread(prefix)
+        val encrypted = backupHasEncryptionHeader(prefix)
+        if (encrypted) require(password.size >= 12) { "Bitte gib das Passwort der verschlüsselten Sicherung ein (mindestens 12 Zeichen)." }
+        val backupInput = if (encrypted) decryptedBackupInput(buffered, password) else buffered
+        ZipInputStream(backupInput).use { zip ->
             while (true) {
                 val entry = zip.nextEntry ?: break
                 when {

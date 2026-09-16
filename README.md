@@ -20,7 +20,7 @@ Native Android app prototype built with Kotlin and Jetpack Compose. The app uses
 - Attach a local image or PDF receipt to an expense; the expense list reports how many receipts are missing.
 - Capture receipt photos through Android's camera app and use bundled, on-device ML Kit OCR to suggest merchant, date, and total. Suggestions remain editable and require user review.
 - Persist those records locally with Android SharedPreferences.
-- Export or restore a ZIP backup containing the local records, profile, and attached receipts; restoring is explicit and replaces the current local data only after confirmation.
+- Export encrypted AES-256-GCM ZIP backups containing local records, profile, and attached receipts; passphrases are stretched with PBKDF2-HMAC-SHA256, and restore replaces local data only after explicit confirmation. Older unencrypted ZIP backups remain importable.
 - Share a local invoice/expense/bank transaction CSV through Android's share sheet for bookkeeping handoff, including explicitly recorded expense net/VAT amounts; exports are marked as working data, not tax returns.
 - Review a year-based summary of issued invoices, recorded expenses, the gross-recorded difference, open/overdue invoices, and expenses missing receipts. Draft invoices are excluded; this is not tax advice or a tax calculation.
 - Review recorded output VAT from issued invoices with a saved VAT-rate snapshot beside exact input VAT values reported from expense documents; records without a rate remain explicitly counted as unknown.
@@ -41,7 +41,7 @@ There is no account/login or cloud sync, live bank/PSD2 connection, automatic ba
 
 ## Publishing an update
 
-Push a version tag such as `v0.22.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
+Push a version tag such as `v0.23.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
 
 ## Build
 

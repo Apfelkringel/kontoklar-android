@@ -11,6 +11,7 @@ class MemoryStatement {
   async run() {
     const [a, b, c, d] = this.values;
     if (this.sql.startsWith("INSERT OR IGNORE INTO installations")) {
+      if (this.db.installations.size >= Number(this.values[4])) return { success: true };
       if (!this.db.installations.has(String(a))) this.db.installations.set(String(a), { installation_hash: String(a), provider_user_id: String(b), created_at: String(c), last_seen_at: String(d), provider_user_ready: 0 });
     } else if (this.sql.startsWith("UPDATE installations SET last_seen_at")) {
       const row = this.db.installations.get(String(b));
@@ -82,6 +83,8 @@ const baseEnv = () => ({
   FINAPI_CLIENT_ID: "sandbox-client",
   FINAPI_CLIENT_SECRET: "sandbox-secret",
   INSTALLATION_PEPPER: "a-test-only-pepper-with-more-than-thirty-two-characters",
+  MAX_INSTALLATIONS: "1000",
+  MAX_NEW_INSTALLATIONS_PER_MINUTE: "20",
 });
 
 test("requires an installation bearer token and answers health without provider credentials", async () => {
@@ -184,6 +187,62 @@ test("rejects excess new installations before persisting their D1 identity", asy
     }
     assert.deepEqual(responses, [200, 200, 200, 200, 200, 429]);
     assert.equal(env.DB.installations.size, 5);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("enforces a global installation ceiling across distinct source IPs", async () => {
+  const env = baseEnv();
+  env.MAX_INSTALLATIONS = "2";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname === "/api/v2/oauth/token") {
+      const grant = new URLSearchParams(String(init?.body)).get("grant_type");
+      return Response.json({ access_token: grant === "client_credentials" ? "client-token" : "user-token" });
+    }
+    if (url.pathname === "/api/v2/users" && init?.method === "POST") return Response.json({ id: "user" }, { status: 201 });
+    if (url.pathname === "/api/v2/banks") return Response.json({ banks: [] });
+    return Response.json({ error: "unexpected test route" }, { status: 500 });
+  };
+  try {
+    const responses: number[] = [];
+    for (let index = 0; index < 3; index++) {
+      responses.push((await worker.fetch(new Request("https://api.test/v1/banks", {
+        headers: { Authorization: `Bearer ${String.fromCharCode(75 + index).repeat(43)}`, "CF-Connecting-IP": `192.0.2.${40 + index}` },
+      }), env as never, {} as never)).status);
+    }
+    assert.deepEqual(responses, [200, 200, 429]);
+    assert.equal(env.DB.installations.size, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("enforces a shared new-installation rate limit across distinct source IPs", async () => {
+  const env = baseEnv();
+  env.MAX_NEW_INSTALLATIONS_PER_MINUTE = "2";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname === "/api/v2/oauth/token") {
+      const grant = new URLSearchParams(String(init?.body)).get("grant_type");
+      return Response.json({ access_token: grant === "client_credentials" ? "client-token" : "user-token" });
+    }
+    if (url.pathname === "/api/v2/users" && init?.method === "POST") return Response.json({ id: "user" }, { status: 201 });
+    if (url.pathname === "/api/v2/banks") return Response.json({ banks: [] });
+    return Response.json({ error: "unexpected test route" }, { status: 500 });
+  };
+  try {
+    const responses: number[] = [];
+    for (let index = 0; index < 3; index++) {
+      responses.push((await worker.fetch(new Request("https://api.test/v1/banks", {
+        headers: { Authorization: `Bearer ${String.fromCharCode(81 + index).repeat(43)}`, "CF-Connecting-IP": `198.51.100.${40 + index}` },
+      }), env as never, {} as never)).status);
+    }
+    assert.deepEqual(responses, [200, 200, 429]);
+    assert.equal(env.DB.installations.size, 2);
   } finally {
     globalThis.fetch = originalFetch;
   }

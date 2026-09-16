@@ -145,15 +145,18 @@ async function authenticate(request: Request, env: Env): Promise<{ hash: string;
   const existing = await env.DB.prepare("SELECT installation_hash, provider_user_id, created_at, provider_user_ready FROM installations WHERE installation_hash = ?")
     .bind(hash).first<Installation>();
   // Admission control must happen before a new durable installation is written.
+  if (!existing) await applyGlobalNewInstallationLimit(env);
   await applyIpRateLimit(request, env, !existing || existing.provider_user_ready === 0);
   if (!existing) {
+    const installationLimit = configuredLimit(env.MAX_INSTALLATIONS, 1_000);
     await env.DB.prepare(
-      "INSERT OR IGNORE INTO installations (installation_hash, provider_user_id, created_at, last_seen_at, provider_user_ready) VALUES (?, ?, ?, ?, 0)",
-    ).bind(hash, userId, now, now).run();
+      "INSERT OR IGNORE INTO installations (installation_hash, provider_user_id, created_at, last_seen_at, provider_user_ready) SELECT ?, ?, ?, ?, 0 WHERE (SELECT COUNT(*) FROM installations) < ?",
+    ).bind(hash, userId, now, now, installationLimit).run();
   }
   const row = await env.DB.prepare("SELECT installation_hash, provider_user_id, created_at, provider_user_ready FROM installations WHERE installation_hash = ?")
     .bind(hash).first<Installation>();
-  if (!row || row.provider_user_id !== userId) throw new HttpError(503, "Bankdienst konnte das lokale Profil nicht laden.");
+  if (!row) throw new HttpError(429, "Die maximale Anzahl an App-Installationen ist erreicht.");
+  if (row.provider_user_id !== userId) throw new HttpError(503, "Bankdienst konnte das lokale Profil nicht laden.");
 
   await env.DB.prepare("UPDATE installations SET last_seen_at = ? WHERE installation_hash = ?").bind(now, hash).run();
   return { hash, userId, password, row };
@@ -171,6 +174,24 @@ async function applyIpRateLimit(request: Request, env: Env, newInstallation: boo
     .bind(key, window).first<{ hits: number }>();
   const limit = newInstallation ? 5 : 60;
   if ((count?.hits ?? limit + 1) > limit) throw new HttpError(429, "Zu viele Anfragen. Bitte kurz warten.");
+}
+
+async function applyGlobalNewInstallationLimit(env: Env): Promise<void> {
+  const window = Math.floor(Date.now() / 60_000);
+  const key = "global:new-installations";
+  await env.DB.prepare(
+    "INSERT INTO request_limits (bucket_key, window_id, hits) VALUES (?, ?, 1) ON CONFLICT(bucket_key) DO UPDATE SET window_id = excluded.window_id, hits = CASE WHEN request_limits.window_id = excluded.window_id THEN request_limits.hits + 1 ELSE 1 END",
+  ).bind(key, window).run();
+  const count = await env.DB.prepare("SELECT hits FROM request_limits WHERE bucket_key = ? AND window_id = ?")
+    .bind(key, window).first<{ hits: number }>();
+  const limit = configuredLimit(env.MAX_NEW_INSTALLATIONS_PER_MINUTE, 20);
+  if ((count?.hits ?? limit + 1) > limit) throw new HttpError(429, "Zu viele neue App-Installationen. Bitte später erneut versuchen.");
+}
+
+function configuredLimit(value: string | undefined, fallback: number): number {
+  if (!value || !/^\d+$/.test(value)) return fallback;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 async function applyInstallationRateLimit(env: Env, installationHash: string): Promise<void> {

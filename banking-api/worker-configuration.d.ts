@@ -5,6 +5,8 @@ interface __BaseEnv_Env {
 	DB: D1Database;
 	FINAPI_ACCESS_BASE_URL: "https://sandbox.finapi.io";
 	FINAPI_WEBFORM_BASE_URL: "https://webform-sandbox.finapi.io";
+	MAX_INSTALLATIONS: "1000";
+	MAX_NEW_INSTALLATIONS_PER_MINUTE: "20";
 	FINAPI_CLIENT_ID: string;
 	FINAPI_CLIENT_SECRET: string;
 	INSTALLATION_PEPPER: string;

@@ -182,6 +182,8 @@ class LocalData(context: Context) {
         .put("offers", storedArray("offers"))
         .put("expenses", storedArray("expenses"))
         .put("bankTransactions", storedArray("bank_transactions"))
+        .put("bankAccounts", storedArray("bank_accounts"))
+        .put("bankSecurities", storedArray("bank_securities"))
         .put("customers", storedArray("customers"))
         .put("products", storedArray("products"))
         .put("taxDeadlines", storedArray("tax_deadlines"))
@@ -197,6 +199,8 @@ class LocalData(context: Context) {
         val importedExpenses = decodeArray(snapshot.getJSONArray("expenses"), ::expenseFromJson)
         val importedExpensePayments = decodeArray(snapshot.optJSONArray("expensePayments") ?: JSONArray(), ::expensePaymentFromJson)
         val importedBankTransactions = decodeArray(snapshot.optJSONArray("bankTransactions") ?: JSONArray(), ::bankTransactionFromJson)
+        val importedBankAccounts = decodeArray(snapshot.optJSONArray("bankAccounts") ?: JSONArray(), ::bankAccountFromJson)
+        val importedBankSecurities = decodeArray(snapshot.optJSONArray("bankSecurities") ?: JSONArray(), ::bankSecurityFromJson)
         val importedCustomers = decodeArray(snapshot.getJSONArray("customers"), ::customerFromJson)
         val importedProducts = decodeArray(snapshot.optJSONArray("products") ?: JSONArray(), ::productFromJson)
         val importedTaxDeadlines = decodeArray(snapshot.optJSONArray("taxDeadlines") ?: JSONArray(), ::taxDeadlineFromJson)
@@ -230,6 +234,8 @@ class LocalData(context: Context) {
         require(importedOffers.map { it.id }.distinct().size == importedOffers.size && importedOffers.all { validIsoDate(it.date) && validIsoDate(it.validUntil) }) { "Die Sicherung enthält doppelte Angebote oder ungültige Angebotsdaten." }
         require(importedExpenses.map { it.id }.distinct().size == importedExpenses.size && importedExpenses.all { validIsoDate(it.date) }) { "Die Sicherung enthält doppelte Ausgaben oder ungültige Ausgabedaten." }
         require(importedBankTransactions.map { it.id }.distinct().size == importedBankTransactions.size) { "Die Sicherung enthält doppelte Bankumsätze." }
+        require(importedBankAccounts.all { it.id.isNotBlank() && it.connectionId.isNotBlank() && it.currency.length <= 3 } && importedBankAccounts.map { it.id }.distinct().size == importedBankAccounts.size) { "Die Sicherung enthält ungültige Bankkonten." }
+        require(importedBankSecurities.all { it.id.isNotBlank() && it.accountId.isNotBlank() && it.connectionId.isNotBlank() } && importedBankSecurities.map { it.id }.distinct().size == importedBankSecurities.size) { "Die Sicherung enthält ungültige Depotpositionen." }
         require(importedCustomers.map { it.id }.distinct().size == importedCustomers.size) { "Die Sicherung enthält doppelte Kunden." }
         require(importedProducts.map { it.id }.distinct().size == importedProducts.size) { "Die Sicherung enthält doppelte Produkte." }
         require(importedTaxDeadlines.map { it.id }.distinct().size == importedTaxDeadlines.size) { "Die Sicherung enthält doppelte Steuertermine." }
@@ -275,6 +281,8 @@ class LocalData(context: Context) {
             "expenses" to snapshot.getJSONArray("expenses").toString(),
             "expense_payments" to (snapshot.optJSONArray("expensePayments") ?: JSONArray()).toString(),
             "bank_transactions" to (snapshot.optJSONArray("bankTransactions") ?: JSONArray()).toString(),
+            "bank_accounts" to (snapshot.optJSONArray("bankAccounts") ?: JSONArray()).toString(),
+            "bank_securities" to (snapshot.optJSONArray("bankSecurities") ?: JSONArray()).toString(),
             "customers" to snapshot.getJSONArray("customers").toString(),
             "products" to (snapshot.optJSONArray("products") ?: JSONArray()).toString(),
             "tax_deadlines" to (snapshot.optJSONArray("taxDeadlines") ?: JSONArray()).toString(),
@@ -411,6 +419,11 @@ class LocalData(context: Context) {
         .put("matchedInvoiceId", transaction.matchedInvoiceId).put("matchedExpenseId", transaction.matchedExpenseId)
         .put("userClassification", transaction.userClassification)
 
+    private fun bankAccountFromJson(it: JSONObject) = BankAccountSummary(it.optString("id"), it.optString("connectionId"), it.optString("name"), it.optString("type"), it.optString("currency"), it.takeUnless { row -> row.isNull("balanceMinor") }?.optLong("balanceMinor"), it.optString("asOfDate"))
+    private fun bankAccountToJson(it: BankAccountSummary) = JSONObject().put("id", it.id).put("connectionId", it.connectionId).put("name", it.name).put("type", it.type).put("currency", it.currency).put("balanceMinor", it.balanceMinor ?: JSONObject.NULL).put("asOfDate", it.asOfDate)
+    private fun bankSecurityFromJson(it: JSONObject) = BankSecurityPosition(it.optString("id"), it.optString("accountId"), it.optString("connectionId"), it.optString("name"), it.optString("isin"), it.optString("wkn"), it.takeUnless { row -> row.isNull("quantityNominal") }?.optDouble("quantityNominal"), it.optString("quantityType"), it.optString("quoteType"), it.takeUnless { row -> row.isNull("quoteMinor") }?.optLong("quoteMinor"), it.optString("quoteCurrency"), it.takeUnless { row -> row.isNull("marketValueMinor") }?.optLong("marketValueMinor"), it.optString("marketValueCurrency"), it.takeUnless { row -> row.isNull("profitOrLossMinor") }?.optLong("profitOrLossMinor"), it.optString("quoteDate"))
+    private fun bankSecurityToJson(it: BankSecurityPosition) = JSONObject().put("id", it.id).put("accountId", it.accountId).put("connectionId", it.connectionId).put("name", it.name).put("isin", it.isin).put("wkn", it.wkn).put("quantityNominal", it.quantityNominal ?: JSONObject.NULL).put("quantityType", it.quantityType).put("quoteType", it.quoteType).put("quoteMinor", it.quoteMinor ?: JSONObject.NULL).put("quoteCurrency", it.quoteCurrency).put("marketValueMinor", it.marketValueMinor ?: JSONObject.NULL).put("marketValueCurrency", it.marketValueCurrency).put("profitOrLossMinor", it.profitOrLossMinor ?: JSONObject.NULL).put("quoteDate", it.quoteDate)
+
     private fun expenseToJson(expense: Expense) = JSONObject()
         .put("id", expense.id).put("merchant", expense.merchant).put("category", expense.category)
         .put("amountCents", expense.amountCents).put("date", expense.date).put("note", expense.note)
@@ -439,6 +452,8 @@ class LocalData(context: Context) {
     fun expenses(): List<Expense> = read("expenses", ::expenseFromJson)
     fun expensePayments(): List<ExpensePayment> = read("expense_payments", ::expensePaymentFromJson)
     fun bankTransactions(): List<BankTransaction> = read("bank_transactions", ::bankTransactionFromJson)
+    fun bankAccounts(): List<BankAccountSummary> = read("bank_accounts", ::bankAccountFromJson)
+    fun bankSecurities(): List<BankSecurityPosition> = read("bank_securities", ::bankSecurityFromJson)
 
     fun saveInvoices(values: List<Invoice>) = write("invoices", values.map(::invoiceToJson))
     fun saveInvoicePayments(values: List<InvoicePayment>) = write("invoice_payments", values.map(::invoicePaymentToJson))
@@ -446,6 +461,8 @@ class LocalData(context: Context) {
     fun saveExpenses(values: List<Expense>) = write("expenses", values.map(::expenseToJson))
     fun saveExpensePayments(values: List<ExpensePayment>) = write("expense_payments", values.map(::expensePaymentToJson))
     fun saveBankTransactions(values: List<BankTransaction>) = write("bank_transactions", values.map(::bankTransactionToJson))
+    fun saveBankAccounts(values: List<BankAccountSummary>) = write("bank_accounts", values.map(::bankAccountToJson))
+    fun saveBankSecurities(values: List<BankSecurityPosition>) = write("bank_securities", values.map(::bankSecurityToJson))
 
     fun updateBankTransactionClassification(transactionId: String, classification: String) {
         val current = bankTransactions()

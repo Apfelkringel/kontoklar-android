@@ -85,6 +85,8 @@ private fun KontoKlarApp() {
     var expenses by remember { mutableStateOf(store.expenses()) }
     var expensePayments by remember { mutableStateOf(store.expensePayments()) }
     var bankTransactions by remember { mutableStateOf(store.bankTransactions()) }
+    var bankAccounts by remember { mutableStateOf(store.bankAccounts()) }
+    var bankSecurities by remember { mutableStateOf(store.bankSecurities()) }
     val liveBanking = remember { LiveBankingClient(context.applicationContext) }
     var bankInstitutions by remember { mutableStateOf<List<BankingInstitution>>(emptyList()) }
     var liveBankConnections by remember { mutableStateOf<List<LiveBankConnection>>(emptyList()) }
@@ -299,6 +301,8 @@ private fun KontoKlarApp() {
                 })
                     Page.Banking -> BankingScreen(
                     transactions = bankTransactions,
+                    accounts = bankAccounts,
+                    securities = bankSecurities,
                     invoices = invoices,
                     expenses = expenses,
                     bankingConfigured = liveBanking.isConfigured,
@@ -349,6 +353,10 @@ private fun KontoKlarApp() {
                                     val fresh = snapshot.transactions.filterNot { it.id in known }
                                     bankTransactions = fresh + bankTransactions
                                     if (fresh.isNotEmpty()) store.saveBankTransactions(bankTransactions)
+                                    bankAccounts = bankAccounts.filterNot { it.connectionId == connection.id } + snapshot.accounts
+                                    bankSecurities = bankSecurities.filterNot { it.connectionId == connection.id } + snapshot.securities
+                                    store.saveBankAccounts(bankAccounts)
+                                    store.saveBankSecurities(bankSecurities)
                                     liveBankConnections = liveBankConnections.map { if (it.id == connection.id) snapshot.connection else it }
                                     bankingMessage = "${fresh.size} neue Umsätze von ${connection.bankName} geladen."
                                 }
@@ -362,6 +370,10 @@ private fun KontoKlarApp() {
                             runCatching { withContext(Dispatchers.IO) { liveBanking.delete(connection.id) } }
                                 .onSuccess {
                                     liveBankConnections = liveBankConnections.filterNot { it.id == connection.id }
+                                    bankAccounts = bankAccounts.filterNot { it.connectionId == connection.id }
+                                    bankSecurities = bankSecurities.filterNot { it.connectionId == connection.id }
+                                    store.saveBankAccounts(bankAccounts)
+                                    store.saveBankSecurities(bankSecurities)
                                     bankingMessage = "Verbindung zu ${connection.bankName} getrennt. Bereits importierte Buchungen bleiben lokal erhalten."
                                 }
                                 .onFailure { bankingMessage = it.message ?: "Bankverbindung konnte nicht getrennt werden." }
@@ -375,6 +387,10 @@ private fun KontoKlarApp() {
                                 withContext(Dispatchers.IO) { liveBanking.deleteProviderProfile() }
                             }.onSuccess {
                                 liveBankConnections = emptyList()
+                                bankAccounts = emptyList()
+                                bankSecurities = emptyList()
+                                store.saveBankAccounts(bankAccounts)
+                                store.saveBankSecurities(bankSecurities)
                                 bankingMessage = "Anbieterprofil und Bankfreigaben gelöscht. Lokal importierte Umsätze bleiben erhalten."
                             }.onFailure { bankingMessage = it.message ?: "Bankprofil konnte nicht gelöscht werden." }
                             bankingBusy = false

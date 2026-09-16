@@ -39,10 +39,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.util.Locale
 
 @Composable
 fun BankingScreen(
     transactions: List<BankTransaction>,
+    accounts: List<BankAccountSummary>,
+    securities: List<BankSecurityPosition>,
     invoices: List<Invoice>,
     expenses: List<Expense>,
     bankingConfigured: Boolean,
@@ -80,6 +83,25 @@ fun BankingScreen(
         contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 90.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        item {
+            if (accounts.isNotEmpty() || securities.isNotEmpty()) {
+                Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Konten & Depot", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        accounts.forEach { account ->
+                            Text("${account.name} · ${account.type}", color = Ink, fontWeight = FontWeight.SemiBold)
+                            Text(account.balanceMinor?.let { formatBankMoney(it, account.currency) } ?: "Kontostand nicht verfügbar", color = Muted, fontSize = 12.sp)
+                            securities.filter { it.accountId == account.id }.forEach { position ->
+                                Text("${position.name}${position.isin.takeIf(String::isNotBlank)?.let { " · $it" }.orEmpty()}", color = Ink, fontSize = 13.sp)
+                                Text("Bestand: ${position.quantityNominal?.toString() ?: "–"} ${position.quantityType} · Wert: ${position.marketValueMinor?.let { formatBankMoney(it, position.marketValueCurrency) } ?: "–"}", color = Muted, fontSize = 11.sp)
+                                if (position.quoteDate.isNotBlank()) Text("Kursdatum: ${position.quoteDate}", color = Muted, fontSize = 10.sp)
+                            }
+                        }
+                        Text("Bestände und Werte laut letztem Anbieterabruf; keine Steuer- oder Renditeberechnung.", color = Muted, fontSize = 10.sp)
+                    }
+                }
+            }
+        }
         item {
             Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp)) {
@@ -183,6 +205,11 @@ fun BankingScreen(
             BankTransactionCard(transaction, invoices, expenses, transactions, onMatchInvoice, onMatchExpense, onClassifyTransaction)
         }
     }
+}
+
+private fun formatBankMoney(minor: Long, currency: String): String {
+    val amount = String.format(Locale.GERMANY, "%.2f", minor / 100.0)
+    return if (currency.isBlank()) amount else "$amount $currency"
 }
 
 @Composable

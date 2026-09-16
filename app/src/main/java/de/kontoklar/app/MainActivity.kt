@@ -845,7 +845,7 @@ private fun Dashboard(invoices: List<Invoice>, expenses: List<Expense>, bankTran
                     Spacer(Modifier.height(15.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Balance("Bankumsätze", "${bankTransactions.size} importiert")
-                        Balance("Ausgaben erfasst", formatEuro(expenseTotal))
+                        Balance("Ausgaben · $selectedYear", formatEuro(expenseTotal))
                     }
                 }
             }
@@ -886,10 +886,13 @@ private fun Dashboard(invoices: List<Invoice>, expenses: List<Expense>, bankTran
                                     if (expenseFraction > 0f) Box(Modifier.fillMaxWidth(expenseFraction).fillMaxHeight().background(Color(0xFFBC6A33), RoundedCornerShape(4.dp)))
                                 }
                             }
-                            Text(formatEuro(maxOf(total.issuedInvoiceCents, total.expenseCents)), color = Ink, fontSize = 10.sp, modifier = Modifier.width(68.dp))
+                            Column(Modifier.width(68.dp)) {
+                                Text(formatEuro(total.issuedInvoiceCents), color = Forest, fontSize = 9.sp, maxLines = 1)
+                                Text(formatEuro(total.expenseCents), color = Color(0xFFBC6A33), fontSize = 9.sp, maxLines = 1)
+                            }
                         }
                     }
-                    Text("Balken zeigen je Monat den Anteil am höchsten Monatswert. Rechnungen werden nach Rechnungsdatum, Ausgaben nach Belegdatum gruppiert; unbezahlte Rechnungen sind enthalten. Keine Gewinn- oder Steuerberechnung.", color = Muted, fontSize = 10.sp)
+                    Text("Rechnungswerte oben, Ausgaben unten; Balkenanteile beziehen sich auf den höchsten Monatswert. Rechnungen nach Rechnungsdatum (unbezahlte enthalten), Ausgaben nach Belegdatum. Keine Gewinn- oder Steuerberechnung.", color = Muted, fontSize = 10.sp)
                 }
             }
         }

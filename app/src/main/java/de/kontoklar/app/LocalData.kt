@@ -184,6 +184,7 @@ class LocalData(context: Context) {
         .put("customers", storedArray("customers"))
         .put("products", storedArray("products"))
         .put("taxDeadlines", storedArray("tax_deadlines"))
+        .put("recurringInvoices", storedArray("recurring_invoices"))
 
     fun restoreSnapshot(snapshot: JSONObject) {
         require(snapshot.optInt("schemaVersion") == 1) { "Diese Sicherungsversion wird nicht unterstützt." }
@@ -194,6 +195,7 @@ class LocalData(context: Context) {
         val importedCustomers = decodeArray(snapshot.getJSONArray("customers"), ::customerFromJson)
         val importedProducts = decodeArray(snapshot.optJSONArray("products") ?: JSONArray(), ::productFromJson)
         val importedTaxDeadlines = decodeArray(snapshot.optJSONArray("taxDeadlines") ?: JSONArray(), ::taxDeadlineFromJson)
+        val importedRecurringPlans = decodeArray(snapshot.optJSONArray("recurringInvoices") ?: JSONArray(), ::recurringInvoicePlanFromJson)
         val importedProfile = businessProfileFromJson(snapshot.getJSONObject("businessProfile"))
         require(importedInvoices.all { it.amountCents > 0 && it.customer.isNotBlank() && it.description.isNotBlank() && it.paidCents in 0..it.amountCents }) { "Die Sicherung enthält ungültige Rechnungen oder Zahlungsstände." }
         require(importedInvoices.all { it.vatRatePercent == null || it.vatRatePercent in 0..27 }) { "Die Sicherung enthält einen ungültigen Umsatzsteuersatz für eine Rechnung." }
@@ -205,6 +207,13 @@ class LocalData(context: Context) {
         require(importedCustomers.all { it.name.isNotBlank() }) { "Die Sicherung enthält ungültige Kundendaten." }
         require(importedProducts.all { it.name.isNotBlank() && it.unitPriceCents > 0 }) { "Die Sicherung enthält ungültige Produkte oder Dienstleistungen." }
         require(importedTaxDeadlines.all { it.id.isNotBlank() && it.title.isNotBlank() && it.title.length <= 120 && it.note.length <= 500 && validIsoDate(it.dueDate) }) { "Die Sicherung enthält ungültige Steuertermine." }
+        require(importedRecurringPlans.all { plan ->
+            plan.id.isNotBlank() && plan.customer.isNotBlank() && plan.intervalMonths in setOf(1, 3, 12) &&
+                plan.paymentTermsDays in 1..90 && plan.anchorDay in 1..31 && validIsoDate(plan.nextRunDate) &&
+                plan.lines.size in 1..20 && plan.lines.all { it.description.isNotBlank() && it.amountCents > 0 } &&
+                runCatching { plan.lines.fold(0L) { total, line -> Math.addExact(total, line.amountCents) } == plan.amountCents }.getOrDefault(false) &&
+                (plan.vatRatePercent == null || plan.vatRatePercent in 0..27)
+        }) { "Die Sicherung enthält ungültige wiederkehrende Rechnungen." }
         require(importedInvoices.map { it.id }.distinct().size == importedInvoices.size && importedInvoices.all { validIsoDate(it.date) && validIsoDate(it.serviceDate) && validIsoDate(it.dueDate) }) { "Die Sicherung enthält doppelte Rechnungen oder ungültige Rechnungsdaten." }
         require(importedOffers.map { it.id }.distinct().size == importedOffers.size && importedOffers.all { validIsoDate(it.date) && validIsoDate(it.validUntil) }) { "Die Sicherung enthält doppelte Angebote oder ungültige Angebotsdaten." }
         require(importedExpenses.map { it.id }.distinct().size == importedExpenses.size && importedExpenses.all { validIsoDate(it.date) }) { "Die Sicherung enthält doppelte Ausgaben oder ungültige Ausgabedaten." }
@@ -212,6 +221,7 @@ class LocalData(context: Context) {
         require(importedCustomers.map { it.id }.distinct().size == importedCustomers.size) { "Die Sicherung enthält doppelte Kunden." }
         require(importedProducts.map { it.id }.distinct().size == importedProducts.size) { "Die Sicherung enthält doppelte Produkte." }
         require(importedTaxDeadlines.map { it.id }.distinct().size == importedTaxDeadlines.size) { "Die Sicherung enthält doppelte Steuertermine." }
+        require(importedRecurringPlans.map { it.id }.distinct().size == importedRecurringPlans.size) { "Die Sicherung enthält doppelte wiederkehrende Rechnungen." }
 
         check(prefs.putStrings(mapOf(
             "invoices" to snapshot.getJSONArray("invoices").toString(),
@@ -221,6 +231,7 @@ class LocalData(context: Context) {
             "customers" to snapshot.getJSONArray("customers").toString(),
             "products" to (snapshot.optJSONArray("products") ?: JSONArray()).toString(),
             "tax_deadlines" to (snapshot.optJSONArray("taxDeadlines") ?: JSONArray()).toString(),
+            "recurring_invoices" to (snapshot.optJSONArray("recurringInvoices") ?: JSONArray()).toString(),
             "business_profile" to businessProfileJson(importedProfile).toString()
         ))) { "Die wiederhergestellten Daten konnten nicht dauerhaft gespeichert werden." }
     }
@@ -281,6 +292,40 @@ class LocalData(context: Context) {
         description = it.optString("description"), unitPriceCents = it.optLong("unitPriceCents")
     )
 
+    private fun recurringInvoicePlanFromJson(it: JSONObject) = RecurringInvoicePlan(
+        id = it.optString("id", UUID.randomUUID().toString()),
+        templateInvoiceId = it.optString("templateInvoiceId"), customer = it.optString("customer"),
+        customerId = it.optString("customerId").takeIf(String::isNotBlank),
+        customerAddress = it.optString("customerAddress"), customerEmail = it.optString("customerEmail"),
+        lines = it.optJSONArray("lines")?.let { array -> List(array.length()) { index ->
+            val line = array.getJSONObject(index)
+            InvoiceLine(line.optString("description"), line.optLong("amountCents"))
+        } }.orEmpty(),
+        intervalMonths = it.optInt("intervalMonths"), nextRunDate = it.optString("nextRunDate"),
+        anchorDay = it.optInt("anchorDay"), paymentTermsDays = it.optInt("paymentTermsDays"),
+        vatRatePercent = it.takeUnless { json -> json.isNull("vatRatePercent") }?.optInt("vatRatePercent"),
+        active = it.optBoolean("active", true)
+    )
+
+    private fun recurringInvoicePlanToJson(plan: RecurringInvoicePlan) = JSONObject()
+        .put("id", plan.id).put("templateInvoiceId", plan.templateInvoiceId)
+        .put("customer", plan.customer).put("customerId", plan.customerId)
+        .put("customerAddress", plan.customerAddress).put("customerEmail", plan.customerEmail)
+        .put("lines", JSONArray().apply { plan.lines.forEach { put(JSONObject().put("description", it.description).put("amountCents", it.amountCents)) } })
+        .put("intervalMonths", plan.intervalMonths).put("nextRunDate", plan.nextRunDate)
+        .put("anchorDay", plan.anchorDay).put("paymentTermsDays", plan.paymentTermsDays)
+        .put("vatRatePercent", plan.vatRatePercent ?: JSONObject.NULL).put("active", plan.active)
+
+    private fun invoiceToJson(invoice: Invoice) = JSONObject()
+        .put("id", invoice.id).put("number", invoice.number).put("customer", invoice.customer)
+        .put("customerId", invoice.customerId).put("customerAddress", invoice.customerAddress)
+        .put("customerEmail", invoice.customerEmail).put("description", invoice.description)
+        .put("amountCents", invoice.amountCents).put("date", invoice.date)
+        .put("serviceDate", invoice.serviceDate).put("dueDate", invoice.dueDate)
+        .put("status", invoice.status).put("paidCents", invoice.paidCents)
+        .put("vatRatePercent", invoice.vatRatePercent ?: JSONObject.NULL)
+        .put("lines", JSONArray().apply { invoice.lines.forEach { put(JSONObject().put("description", it.description).put("amountCents", it.amountCents)) } })
+
     private fun taxDeadlineFromJson(it: JSONObject) = TaxDeadline(
         id = it.optString("id", UUID.randomUUID().toString()), title = it.optString("title"),
         dueDate = it.optString("dueDate"), note = it.optString("note"), completed = it.optBoolean("completed")
@@ -293,7 +338,7 @@ class LocalData(context: Context) {
     fun expenses(): List<Expense> = read("expenses", ::expenseFromJson)
     fun bankTransactions(): List<BankTransaction> = read("bank_transactions", ::bankTransactionFromJson)
 
-    fun saveInvoices(values: List<Invoice>) = write("invoices", values.map { JSONObject().put("id", it.id).put("number", it.number).put("customer", it.customer).put("customerId", it.customerId).put("customerAddress", it.customerAddress).put("customerEmail", it.customerEmail).put("description", it.description).put("amountCents", it.amountCents).put("date", it.date).put("serviceDate", it.serviceDate).put("dueDate", it.dueDate).put("status", it.status).put("paidCents", it.paidCents).put("vatRatePercent", it.vatRatePercent ?: JSONObject.NULL).put("lines", JSONArray().apply { it.lines.forEach { line -> put(JSONObject().put("description", line.description).put("amountCents", line.amountCents)) } }) })
+    fun saveInvoices(values: List<Invoice>) = write("invoices", values.map(::invoiceToJson))
     fun saveOffers(values: List<Offer>) = write("offers", values.map { JSONObject().put("id", it.id).put("number", it.number).put("customer", it.customer).put("customerId", it.customerId).put("customerAddress", it.customerAddress).put("customerEmail", it.customerEmail).put("description", it.description).put("amountCents", it.amountCents).put("date", it.date).put("validUntil", it.validUntil).put("status", it.status).put("convertedInvoiceId", it.convertedInvoiceId).put("lines", JSONArray().apply { it.lines.forEach { line -> put(JSONObject().put("description", line.description).put("amountCents", line.amountCents)) } }) })
     fun saveExpenses(values: List<Expense>) = write("expenses", values.map { JSONObject().put("id", it.id).put("merchant", it.merchant).put("category", it.category).put("amountCents", it.amountCents).put("date", it.date).put("note", it.note).put("receiptUri", it.receiptUri).put("inputVatCents", it.inputVatCents ?: JSONObject.NULL) })
     fun saveBankTransactions(values: List<BankTransaction>) = write("bank_transactions", values.map { JSONObject().put("id", it.id).put("accountIban", it.accountIban).put("date", it.date).put("counterparty", it.counterparty).put("description", it.description).put("amountCents", it.amountCents).put("reference", it.reference).put("matchedInvoiceId", it.matchedInvoiceId).put("matchedExpenseId", it.matchedExpenseId) })
@@ -303,6 +348,28 @@ class LocalData(context: Context) {
     fun saveProducts(values: List<Product>) = write("products", values.map { JSONObject().put("id", it.id).put("name", it.name).put("description", it.description).put("unitPriceCents", it.unitPriceCents) })
     fun taxDeadlines(): List<TaxDeadline> = read("tax_deadlines", ::taxDeadlineFromJson)
     fun saveTaxDeadlines(values: List<TaxDeadline>) = write("tax_deadlines", values.map { JSONObject().put("id", it.id).put("title", it.title).put("dueDate", it.dueDate).put("note", it.note).put("completed", it.completed) })
+    fun recurringInvoicePlans(): List<RecurringInvoicePlan> = read("recurring_invoices", ::recurringInvoicePlanFromJson)
+    fun saveRecurringInvoicePlans(values: List<RecurringInvoicePlan>) = write("recurring_invoices", values.map(::recurringInvoicePlanToJson))
+
+    fun generateNextRecurringInvoice(planId: String, today: LocalDate = LocalDate.now()): Invoice {
+        val currentPlans = recurringInvoicePlans()
+        val plan = currentPlans.firstOrNull { it.id == planId } ?: error("Die Rechnungsvorlage ist nicht mehr vorhanden.")
+        require(plan.active) { "Diese Rechnungsvorlage ist pausiert." }
+        val scheduledDate = LocalDate.parse(plan.nextRunDate)
+        require(!scheduledDate.isAfter(today)) { "Diese wiederkehrende Rechnung ist noch nicht fällig." }
+        val currentInvoices = invoices()
+        val prefix = businessProfile().invoicePrefix
+        val number = nextInvoiceNumber(scheduledDate.year, currentInvoices.map { it.number }, prefix)
+        val invoice = recurringInvoiceDraft(plan, number, scheduledDate)
+        val updatedPlan = plan.copy(nextRunDate = nextRecurringDate(scheduledDate, plan.intervalMonths, plan.anchorDay).toString())
+        val updatedPlans = currentPlans.map { if (it.id == planId) updatedPlan else it }
+        val updatedInvoices = currentInvoices.upsertInvoice(invoice)
+        check(prefs.putStrings(mapOf(
+            "invoices" to JSONArray(updatedInvoices.map(::invoiceToJson)).toString(),
+            "recurring_invoices" to JSONArray(updatedPlans.map(::recurringInvoicePlanToJson)).toString()
+        ))) { "Rechnungsentwurf und Folgetermin konnten nicht dauerhaft gespeichert werden." }
+        return invoice
+    }
 
     fun businessProfile(): BusinessProfile {
         val json = prefs.getString("business_profile", null)?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return BusinessProfile()

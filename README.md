@@ -10,6 +10,7 @@ Native Android app prototype built with Kotlin and Jetpack Compose. The app uses
 - Maintain a local customer directory with search and editable names, email, billing address, and tax identifier; select a saved customer for new invoices and snapshot those billing details into the invoice draft.
 - Maintain a reusable product and service catalog with saved descriptions and gross prices; apply a catalog entry to new invoices and offers.
 - Sequential invoice draft numbers, locally persisted invoice states (draft/sent/paid), PDF draft generation, and Android share sheet.
+- Create monthly, quarterly, or annual recurring invoice plans from an existing invoice, preserve month-end billing days, pause/resume plans, and generate a numbered draft only after the user confirms a due occurrence; the next date and new invoice are committed together. Plans travel in encrypted backups. Sending remains a separate manual action.
 - Edit and delete invoice drafts while preserving their number; sent and paid invoices cannot be rewritten as drafts.
 - Schedule one local Android reminder for a sent invoice from 09:00 on the day after its due date; marking it paid cancels the alarm and any visible reminder. The Android 13+ notification permission is requested when an invoice is first marked sent, and pending reminders are restored after reboot, time changes, and app updates.
 - Local business profile settings for sender identity/address, e-invoice email, optional tax identifiers, invoice prefix, payment term, and VAT rate. The prefix and payment term are applied to new drafts; gross amounts are split into net and VAT for the limited XRechnung export.
@@ -43,7 +44,7 @@ There is no account/login or cloud sync, live bank/PSD2 connection, automatic ba
 
 ## Publishing an update
 
-Push a version tag such as `v0.30.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
+Push a version tag such as `v0.31.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
 
 ## Build
 

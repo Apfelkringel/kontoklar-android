@@ -580,6 +580,17 @@ private fun KontoKlarApp() {
                         }
                         .onFailure { toast = it.message ?: "Zahlung konnte nicht erfasst werden." }
                 },
+                onPaymentReminder = {
+                    runCatching {
+                        val (subject, body) = paymentReminderEmail(invoice, profile)
+                        val recipient = invoice.customerEmail.takeIf(String::isNotBlank).orEmpty()
+                        val intent = Intent(Intent.ACTION_SENDTO, Uri.fromParts("mailto", recipient, null)).apply {
+                            putExtra(Intent.EXTRA_SUBJECT, subject)
+                            putExtra(Intent.EXTRA_TEXT, body)
+                        }
+                        context.startActivity(intent)
+                    }.onFailure { toast = it.message ?: "E-Mail-Entwurf konnte nicht geöffnet werden." }
+                },
                 onStatusChange = { status ->
                     invoices = invoices.map { if (it.id == invoice.id) it.copy(status = status, paidCents = if (status == "Bezahlt") it.amountCents else it.paidCents) else it }
                     store.saveInvoices(invoices)
@@ -1107,6 +1118,7 @@ private fun InvoiceDetailsDialog(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onRegisterPayment: (Long) -> Unit,
+    onPaymentReminder: () -> Unit,
     onStatusChange: (String) -> Unit
 ) {
     var paymentAmount by remember(invoice.id, invoice.paidCents) { mutableStateOf("") }
@@ -1126,6 +1138,12 @@ private fun InvoiceDetailsDialog(
                 } ?: Text("Kein Steuersatz-Snapshot (Altbestand)", color = Muted, fontSize = 12.sp)
                 Text("Datum: ${invoice.date} · fällig: ${invoice.dueDate}", color = Muted, fontSize = 12.sp)
                 Text("Status: ${invoice.status}", color = Forest, fontWeight = FontWeight.SemiBold)
+                if (paymentReminderEligible(invoice)) {
+                    OutlinedButton(onClick = onPaymentReminder, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Email, null); Spacer(Modifier.width(8.dp)); Text("Zahlungserinnerung per E-Mail vorbereiten")
+                    }
+                    Text("Öffnet eine bearbeitbare Nachricht in deiner E-Mail-App. KontoKlar versendet nichts automatisch.", color = Muted, fontSize = 11.sp)
+                }
                 Text("Das PDF wird ausdrücklich als unvollständiger Entwurf gekennzeichnet.", color = Muted, fontSize = 11.sp)
                 val xmlErrors = XRechnung.validationErrors(invoice, profile)
                 OutlinedButton(onClick = onExportXml, modifier = Modifier.fillMaxWidth()) {
@@ -1142,7 +1160,7 @@ private fun InvoiceDetailsDialog(
                     TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.colorScheme.error); Spacer(Modifier.width(8.dp)); Text("Entwurf löschen", color = MaterialTheme.colorScheme.error)
                     }
-                    Text("Nach der Fälligkeit kann KontoKlar einmalig eine Zahlungserinnerung senden. Android-Mitteilungen müssen dafür erlaubt sein.", color = Muted, fontSize = 11.sp)
+                    Text("Nach der Fälligkeit kann KontoKlar einmalig eine lokale Zahlungserinnerung anzeigen. Android-Mitteilungen müssen dafür erlaubt sein.", color = Muted, fontSize = 11.sp)
                     Button(onClick = { onStatusChange("Versendet") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Forest)) { Text("Als versendet markieren") }
                 } else if (invoice.status == "Versendet" || invoice.status == "Teilbezahlt") {
                     OutlinedTextField(

@@ -76,6 +76,7 @@ private fun KontoKlarApp() {
     val context = LocalContext.current
     val store = remember { LocalData(context) }
     var invoices by remember { mutableStateOf(store.invoices()) }
+    var invoicePayments by remember { mutableStateOf(store.invoicePayments()) }
     var expenses by remember { mutableStateOf(store.expenses()) }
     var bankTransactions by remember { mutableStateOf(store.bankTransactions()) }
     var customers by remember { mutableStateOf(store.customers()) }
@@ -120,6 +121,8 @@ private fun KontoKlarApp() {
     var incomingInvoiceError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(store) {
+        withContext(Dispatchers.IO) { store.migrateMatchedInvoicePayments() }
+        invoicePayments = store.invoicePayments()
         withContext(Dispatchers.IO) { cleanupReceiptWorkingCopies(context) }
         val priorExpenses = expenses
         val migrated = withContext(Dispatchers.IO) {
@@ -247,7 +250,7 @@ private fun KontoKlarApp() {
                     toast = "Fristenliste aktualisiert"
                 }, onAction = { action ->
                     when (action) {
-                        "Steuerberater teilen" -> runCatching { shareBookkeepingCsv(context, invoices, expenses, bankTransactions) }
+                        "Steuerberater teilen" -> runCatching { shareBookkeepingCsv(context, invoices, expenses, bankTransactions, invoicePayments) }
                             .onFailure { toast = it.message ?: "Export konnte nicht erstellt werden." }
                         "Steuerprofil" -> dialog = "Unternehmensprofil"
                         else -> dialog = action
@@ -264,7 +267,7 @@ private fun KontoKlarApp() {
                     else if (action == "Wiederkehrende Rechnungen") recurringInvoicesOpen = true
                     else if (action == "Wiederkehrende Ausgaben") recurringExpensesOpen = true
                     else if (action == "Dokumente") documentsOpen = true
-                    else if (action == "Mit Buchhalter teilen") runCatching { shareBookkeepingCsv(context, invoices, expenses, bankTransactions) }
+                    else if (action == "Mit Buchhalter teilen") runCatching { shareBookkeepingCsv(context, invoices, expenses, bankTransactions, invoicePayments) }
                         .onFailure { toast = it.message ?: "Export konnte nicht erstellt werden." }
                     else toast = "$action – wird eingerichtet"
                 })
@@ -275,14 +278,15 @@ private fun KontoKlarApp() {
                     onImportStatement = { bankStatementImportLauncher.launch(arrayOf("application/xml", "text/xml", "application/camt.053+xml", "*/*")) },
                     onMatchInvoice = { transaction, invoice ->
                         if (transaction.amountCents > 0 && transaction.amountCents <= invoiceOutstandingCents(invoice) && invoice.status != "Entwurf") {
-                            val paidInvoice = runCatching { applyInvoicePayment(invoice, transaction.amountCents) }.getOrNull()
-                            if (paidInvoice == null) return@BankingScreen
-                            invoices = invoices.upsertInvoice(paidInvoice)
-                            store.saveInvoices(invoices)
-                            bankTransactions = bankTransactions.map { if (it.id == transaction.id) it.copy(matchedInvoiceId = invoice.id) else it }
-                            store.saveBankTransactions(bankTransactions)
-                            if (paidInvoice.status == "Bezahlt") InvoiceReminderScheduler.cancel(context, invoice.id)
-                            toast = if (paidInvoice.status == "Bezahlt") "Zahlung ${invoice.number} zugeordnet; Rechnung vollständig bezahlt" else "Teilzahlung ${invoice.number} zugeordnet · Rest ${formatEuro(invoiceOutstandingCents(paidInvoice))}"
+                            runCatching { store.recordInvoicePayment(invoice.id, transaction.amountCents, LocalDate.parse(transaction.date), "Kontoauszug", transaction.id) }
+                                .onSuccess { paidInvoice ->
+                                    invoices = store.invoices()
+                                    invoicePayments = store.invoicePayments()
+                                    bankTransactions = store.bankTransactions()
+                                    if (paidInvoice.status == "Bezahlt") InvoiceReminderScheduler.cancel(context, invoice.id)
+                                    toast = if (paidInvoice.status == "Bezahlt") "Zahlung ${invoice.number} zugeordnet; Rechnung vollständig bezahlt" else "Teilzahlung ${invoice.number} zugeordnet · Rest ${formatEuro(invoiceOutstandingCents(paidInvoice))}"
+                                }
+                                .onFailure { toast = it.message ?: "Zahlung konnte nicht zugeordnet werden." }
                         }
                     },
                     onMatchExpense = { transaction, expense ->
@@ -429,7 +433,7 @@ private fun KontoKlarApp() {
             AlertDialog(
                 onDismissRequest = { restoreBackupUri = null },
                 title = { Text("Sicherung wiederherstellen?") },
-                text = { Text("Die Sicherung ersetzt deine lokalen Rechnungen, Angebote, wiederkehrenden Rechnungs- und Ausgabevorlagen, Kunden, Ausgaben und das Unternehmensprofil. Verschlüsselte Sicherungen benötigen das Erstellpasswort. Ein angehängter Beleg wird mit übernommen. Erstelle vorher eine aktuelle Sicherung, wenn du vorhandene Daten behalten möchtest.") },
+                text = { Text("Die Sicherung ersetzt deine lokalen Rechnungen samt Zahlungseingängen, Angebote, wiederkehrenden Rechnungs- und Ausgabevorlagen, Kunden, Ausgaben und das Unternehmensprofil. Verschlüsselte Sicherungen benötigen das Erstellpasswort. Ein angehängter Beleg wird mit übernommen. Erstelle vorher eine aktuelle Sicherung, wenn du vorhandene Daten behalten möchtest.") },
                 confirmButton = {
                     TextButton(onClick = {
                         backupPassword = ""
@@ -462,10 +466,14 @@ private fun KontoKlarApp() {
                             backupPassword = ""
                             backupPasswordDialog = false
                             restoreBackupUri = null
-                            val result = runCatching { withContext(Dispatchers.IO) { restoreBackup(context, source, store, password) } }
+                            val result = runCatching { withContext(Dispatchers.IO) {
+                                restoreBackup(context, source, store, password)
+                                store.migrateMatchedInvoicePayments()
+                            } }
                             password.fill('\u0000')
                             result.onSuccess {
                                 invoices = store.invoices()
+                                invoicePayments = store.invoicePayments()
                                 expenses = store.expenses()
                                 bankTransactions = store.bankTransactions()
                                 customers = store.customers()
@@ -557,6 +565,7 @@ private fun KontoKlarApp() {
         selectedInvoice?.let { invoice ->
             InvoiceDetailsDialog(
                 invoice = invoice,
+                payments = invoicePayments.filter { it.invoiceId == invoice.id },
                 profile = profile,
                 onDismiss = { selectedInvoice = null },
                 onExportXml = {
@@ -570,10 +579,10 @@ private fun KontoKlarApp() {
                 onEdit = { invoiceToEdit = invoice; selectedInvoice = null; dialog = "Rechnung bearbeiten" },
                 onDelete = { invoiceToDelete = invoice; selectedInvoice = null },
                 onRegisterPayment = { cents ->
-                    runCatching { applyInvoicePayment(invoice, cents) }
+                    runCatching { store.recordInvoicePayment(invoice.id, cents) }
                         .onSuccess { updated ->
-                            invoices = invoices.upsertInvoice(updated)
-                            store.saveInvoices(invoices)
+                            invoices = store.invoices()
+                            invoicePayments = store.invoicePayments()
                             selectedInvoice = updated
                             if (updated.status == "Bezahlt") InvoiceReminderScheduler.cancel(context, invoice.id)
                             toast = "Zahlung erfasst · Restbetrag ${formatEuro(invoiceOutstandingCents(updated))}"
@@ -592,8 +601,15 @@ private fun KontoKlarApp() {
                     }.onFailure { toast = it.message ?: "E-Mail-Entwurf konnte nicht geöffnet werden." }
                 },
                 onStatusChange = { status ->
-                    invoices = invoices.map { if (it.id == invoice.id) it.copy(status = status, paidCents = if (status == "Bezahlt") it.amountCents else it.paidCents) else it }
-                    store.saveInvoices(invoices)
+                    if (status == "Bezahlt" && invoiceOutstandingCents(invoice) > 0L) {
+                        runCatching { store.recordInvoicePayment(invoice.id, invoiceOutstandingCents(invoice)) }
+                            .onFailure { toast = it.message ?: "Zahlung konnte nicht erfasst werden."; return@InvoiceDetailsDialog }
+                    } else {
+                        invoices = invoices.map { if (it.id == invoice.id) it.copy(status = status) else it }
+                        store.saveInvoices(invoices)
+                    }
+                    invoices = store.invoices()
+                    invoicePayments = store.invoicePayments()
                     if (status == "Versendet" && android.os.Build.VERSION.SDK_INT >= 33 &&
                         androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
                     ) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -966,7 +982,7 @@ private fun DataManagementDialog(onDismiss: () -> Unit, onExport: () -> Unit, on
         title = { Text("Dokumente & Datensicherung", color = Ink, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Erstelle eine passwortgeschützte Sicherung mit Rechnungen, Angeboten, wiederkehrenden Rechnungs- und Ausgabevorlagen, Kunden, Ausgaben, importierten Bankumsätzen, Profilangaben und Belegen. Die Verschlüsselung schützt die Datei auch außerhalb dieses Geräts. Bewahre das Passwort sicher auf – es kann nicht wiederhergestellt werden. Ältere unverschlüsselte ZIP-Sicherungen lassen sich weiterhin importieren.", color = Muted, fontSize = 13.sp)
+                Text("Erstelle eine passwortgeschützte Sicherung mit Rechnungen und datierten Zahlungseingängen, Angeboten, wiederkehrenden Rechnungs- und Ausgabevorlagen, Kunden, Ausgaben, importierten Bankumsätzen, Profilangaben und Belegen. Die Verschlüsselung schützt die Datei auch außerhalb dieses Geräts. Bewahre das Passwort sicher auf – es kann nicht wiederhergestellt werden. Ältere unverschlüsselte ZIP-Sicherungen lassen sich weiterhin importieren.", color = Muted, fontSize = 13.sp)
                 Button(onClick = onExport, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Forest)) {
                     Icon(Icons.Default.Backup, null); Spacer(Modifier.width(8.dp)); Text("Sicherung exportieren")
                 }
@@ -1126,6 +1142,7 @@ private fun EmptyState(title: String, body: String) {
 @Composable
 private fun InvoiceDetailsDialog(
     invoice: Invoice,
+    payments: List<InvoicePayment>,
     profile: BusinessProfile,
     onDismiss: () -> Unit,
     onExportXml: () -> Unit,
@@ -1147,6 +1164,16 @@ private fun InvoiceDetailsDialog(
                 invoiceLines(invoice).forEachIndexed { index, line -> Text("${index + 1}. ${line.description} · ${formatEuro(line.amountCents)}", color = Muted) }
                 Text("Betrag: ${formatEuro(invoice.amountCents)}", color = Ink)
                 if (invoice.status != "Entwurf") Text("Erhalten: ${formatEuro((invoice.amountCents - invoiceOutstandingCents(invoice)).coerceAtLeast(0))} · Restbetrag: ${formatEuro(invoiceOutstandingCents(invoice))}", color = Ink, fontWeight = FontWeight.Medium)
+                if (invoice.status != "Entwurf") {
+                    val loggedPaymentCents = payments.sumOf(InvoicePayment::amountCents)
+                    Text("Zahlungseingänge", color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    payments.sortedBy(InvoicePayment::date).forEach { payment ->
+                        Text("${payment.date} · ${formatEuro(payment.amountCents)} · ${if (payment.source == "Kontoauszug") "Kontoauszug" else "manuell erfasst"}", color = Muted, fontSize = 12.sp)
+                    }
+                    val legacyPaidCents = (invoice.paidCents - loggedPaymentCents).coerceAtLeast(0L)
+                    if (legacyPaidCents > 0L) Text("Altbestand: ${formatEuro(legacyPaidCents)} bereits als bezahlt gespeichert, aber ohne historisches Zahlungsdatum.", color = Muted, fontSize = 11.sp)
+                    else if (payments.isEmpty()) Text("Noch keine Zahlungseingänge erfasst.", color = Muted, fontSize = 11.sp)
+                }
                 invoice.vatRatePercent?.let { rate ->
                     val amounts = invoiceTaxBreakdown(invoice, rate)
                     Text("USt.-Satz bei Erstellung: $rate % · Netto ${formatEuro(amounts.netCents)} · USt. ${formatEuro(amounts.vatCents)}", color = Muted, fontSize = 12.sp)

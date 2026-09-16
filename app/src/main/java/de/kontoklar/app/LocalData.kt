@@ -178,6 +178,7 @@ class LocalData(context: Context) {
         .put("schemaVersion", 1)
         .put("businessProfile", businessProfileJson(businessProfile()))
         .put("invoices", storedArray("invoices"))
+        .put("invoicePayments", storedArray("invoice_payments"))
         .put("offers", storedArray("offers"))
         .put("expenses", storedArray("expenses"))
         .put("bankTransactions", storedArray("bank_transactions"))
@@ -190,6 +191,7 @@ class LocalData(context: Context) {
     fun restoreSnapshot(snapshot: JSONObject) {
         require(snapshot.optInt("schemaVersion") == 1) { "Diese Sicherungsversion wird nicht unterstützt." }
         val importedInvoices = decodeArray(snapshot.getJSONArray("invoices"), ::invoiceFromJson)
+        val importedInvoicePayments = decodeArray(snapshot.optJSONArray("invoicePayments") ?: JSONArray(), ::invoicePaymentFromJson)
         val importedOffers = decodeArray(snapshot.getJSONArray("offers"), ::offerFromJson)
         val importedExpenses = decodeArray(snapshot.getJSONArray("expenses"), ::expenseFromJson)
         val importedBankTransactions = decodeArray(snapshot.optJSONArray("bankTransactions") ?: JSONArray(), ::bankTransactionFromJson)
@@ -231,9 +233,26 @@ class LocalData(context: Context) {
         require(importedTaxDeadlines.map { it.id }.distinct().size == importedTaxDeadlines.size) { "Die Sicherung enthält doppelte Steuertermine." }
         require(importedRecurringPlans.map { it.id }.distinct().size == importedRecurringPlans.size) { "Die Sicherung enthält doppelte wiederkehrende Rechnungen." }
         require(importedRecurringExpenses.map { it.id }.distinct().size == importedRecurringExpenses.size) { "Die Sicherung enthält doppelte wiederkehrende Ausgaben." }
+        require(importedInvoicePayments.all { payment ->
+            payment.id.isNotBlank() && payment.invoiceId in importedInvoices.map(Invoice::id).toSet() &&
+                payment.amountCents > 0 && validIsoDate(payment.date) && payment.source in setOf("Manuell", "Kontoauszug") &&
+                ((payment.source == "Kontoauszug") == (payment.bankTransactionId != null))
+        }) { "Die Sicherung enthält ungültige Zahlungseingänge." }
+        require(importedInvoicePayments.map { it.id }.distinct().size == importedInvoicePayments.size &&
+            importedInvoicePayments.mapNotNull { it.bankTransactionId }.distinct().size == importedInvoicePayments.count { it.bankTransactionId != null }) {
+            "Die Sicherung enthält doppelte Zahlungseingänge oder Kontoauszugszuordnungen."
+        }
+        require(importedInvoicePayments.groupBy(InvoicePayment::invoiceId).all { (invoiceId, payments) ->
+            val invoice = importedInvoices.first { it.id == invoiceId }
+            runCatching { payments.fold(0L) { sum, payment -> Math.addExact(sum, payment.amountCents) } <= invoice.paidCents }.getOrDefault(false)
+        }) { "Die Zahlungseingänge der Sicherung überschreiten den gespeicherten Rechnungszahlungsstand." }
+        require(importedInvoicePayments.filter { it.source == "Kontoauszug" }.all { payment ->
+            importedBankTransactions.any { transaction -> transaction.id == payment.bankTransactionId && transaction.matchedInvoiceId == payment.invoiceId && transaction.amountCents == payment.amountCents && transaction.date == payment.date }
+        }) { "Eine Zahlungseingang-Zuordnung passt nicht zum importierten Kontoauszug." }
 
         check(prefs.putStrings(mapOf(
             "invoices" to snapshot.getJSONArray("invoices").toString(),
+            "invoice_payments" to (snapshot.optJSONArray("invoicePayments") ?: JSONArray()).toString(),
             "offers" to snapshot.getJSONArray("offers").toString(),
             "expenses" to snapshot.getJSONArray("expenses").toString(),
             "bank_transactions" to (snapshot.optJSONArray("bankTransactions") ?: JSONArray()).toString(),
@@ -340,6 +359,26 @@ class LocalData(context: Context) {
         .put("inputVatCents", plan.inputVatCents ?: JSONObject.NULL).put("intervalMonths", plan.intervalMonths)
         .put("nextRunDate", plan.nextRunDate).put("anchorDay", plan.anchorDay).put("active", plan.active)
 
+    private fun invoicePaymentFromJson(json: JSONObject) = InvoicePayment(
+        id = json.optString("id", UUID.randomUUID().toString()),
+        invoiceId = json.optString("invoiceId"),
+        amountCents = json.optLong("amountCents"),
+        date = json.optString("date"),
+        source = json.optString("source", "Manuell"),
+        bankTransactionId = json.optString("bankTransactionId").takeIf(String::isNotBlank)
+    )
+
+    private fun invoicePaymentToJson(payment: InvoicePayment) = JSONObject()
+        .put("id", payment.id).put("invoiceId", payment.invoiceId).put("amountCents", payment.amountCents)
+        .put("date", payment.date).put("source", payment.source)
+        .put("bankTransactionId", payment.bankTransactionId ?: JSONObject.NULL)
+
+    private fun bankTransactionToJson(transaction: BankTransaction) = JSONObject()
+        .put("id", transaction.id).put("accountIban", transaction.accountIban).put("date", transaction.date)
+        .put("counterparty", transaction.counterparty).put("description", transaction.description)
+        .put("amountCents", transaction.amountCents).put("reference", transaction.reference)
+        .put("matchedInvoiceId", transaction.matchedInvoiceId).put("matchedExpenseId", transaction.matchedExpenseId)
+
     private fun expenseToJson(expense: Expense) = JSONObject()
         .put("id", expense.id).put("merchant", expense.merchant).put("category", expense.category)
         .put("amountCents", expense.amountCents).put("date", expense.date).put("note", expense.note)
@@ -361,6 +400,7 @@ class LocalData(context: Context) {
     )
 
     fun invoices(): List<Invoice> = read("invoices", ::invoiceFromJson)
+    fun invoicePayments(): List<InvoicePayment> = read("invoice_payments", ::invoicePaymentFromJson)
 
     fun offers(): List<Offer> = read("offers", ::offerFromJson)
 
@@ -368,9 +408,55 @@ class LocalData(context: Context) {
     fun bankTransactions(): List<BankTransaction> = read("bank_transactions", ::bankTransactionFromJson)
 
     fun saveInvoices(values: List<Invoice>) = write("invoices", values.map(::invoiceToJson))
+    fun saveInvoicePayments(values: List<InvoicePayment>) = write("invoice_payments", values.map(::invoicePaymentToJson))
     fun saveOffers(values: List<Offer>) = write("offers", values.map { JSONObject().put("id", it.id).put("number", it.number).put("customer", it.customer).put("customerId", it.customerId).put("customerAddress", it.customerAddress).put("customerEmail", it.customerEmail).put("description", it.description).put("amountCents", it.amountCents).put("date", it.date).put("validUntil", it.validUntil).put("status", it.status).put("convertedInvoiceId", it.convertedInvoiceId).put("lines", JSONArray().apply { it.lines.forEach { line -> put(JSONObject().put("description", line.description).put("amountCents", line.amountCents)) } }) })
     fun saveExpenses(values: List<Expense>) = write("expenses", values.map(::expenseToJson))
-    fun saveBankTransactions(values: List<BankTransaction>) = write("bank_transactions", values.map { JSONObject().put("id", it.id).put("accountIban", it.accountIban).put("date", it.date).put("counterparty", it.counterparty).put("description", it.description).put("amountCents", it.amountCents).put("reference", it.reference).put("matchedInvoiceId", it.matchedInvoiceId).put("matchedExpenseId", it.matchedExpenseId) })
+    fun saveBankTransactions(values: List<BankTransaction>) = write("bank_transactions", values.map(::bankTransactionToJson))
+
+    fun recordInvoicePayment(
+        invoiceId: String,
+        amountCents: Long,
+        date: LocalDate = LocalDate.now(),
+        source: String = "Manuell",
+        bankTransactionId: String? = null
+    ): Invoice {
+        val currentInvoices = invoices()
+        val invoice = currentInvoices.firstOrNull { it.id == invoiceId } ?: error("Die Rechnung ist nicht mehr vorhanden.")
+        val currentPayments = invoicePayments()
+        if (bankTransactionId != null) {
+            require(currentPayments.none { it.bankTransactionId == bankTransactionId }) { "Dieser Kontoauszug wurde bereits als Zahlung erfasst." }
+        }
+        val recorded = de.kontoklar.app.recordInvoicePayment(invoice, amountCents, date, source, bankTransactionId)
+        val updatedInvoices = currentInvoices.upsertInvoice(recorded.invoice)
+        val values = mutableMapOf(
+            "invoices" to JSONArray(updatedInvoices.map(::invoiceToJson)).toString(),
+            "invoice_payments" to JSONArray(currentPayments + recorded.payment).toString()
+        )
+        if (bankTransactionId != null) {
+            val transactions = bankTransactions()
+            val transaction = transactions.firstOrNull { it.id == bankTransactionId } ?: error("Der Bankumsatz ist nicht mehr vorhanden.")
+            require(transaction.amountCents == amountCents && transaction.amountCents > 0 && transaction.date == date.toString()) {
+                "Der Bankumsatz passt nicht zum erfassten Zahlungseingang."
+            }
+            require(transaction.matchedExpenseId == null && (transaction.matchedInvoiceId == null || transaction.matchedInvoiceId == invoiceId)) {
+                "Der Bankumsatz ist bereits einer anderen Buchung zugeordnet."
+            }
+            val updatedTransactions = transactions.map { if (it.id == bankTransactionId) it.copy(matchedInvoiceId = invoiceId) else it }
+            values["bank_transactions"] = JSONArray(updatedTransactions.map(::bankTransactionToJson)).toString()
+        }
+        check(prefs.putStrings(values)) { "Rechnung und Zahlungseingang konnten nicht dauerhaft gespeichert werden." }
+        return recorded.invoice
+    }
+
+    fun migrateMatchedInvoicePayments(): Int {
+        val payments = invoicePayments()
+        val migrated = recoverMatchedBankPayments(invoices(), payments, bankTransactions())
+        if (migrated.isEmpty()) return 0
+        check(prefs.putStrings(mapOf("invoice_payments" to JSONArray(payments + migrated).toString()))) {
+            "Historische Bankzahlungen konnten nicht übernommen werden."
+        }
+        return migrated.size
+    }
     fun customers(): List<Customer> = read("customers") { Customer(id = it.optString("id", UUID.randomUUID().toString()), name = it.optString("name"), email = it.optString("email"), street = it.optString("street"), postalCode = it.optString("postalCode"), city = it.optString("city"), taxNumber = it.optString("taxNumber")) }
     fun saveCustomers(values: List<Customer>) = write("customers", values.map { JSONObject().put("id", it.id).put("name", it.name).put("email", it.email).put("street", it.street).put("postalCode", it.postalCode).put("city", it.city).put("taxNumber", it.taxNumber) })
     fun products(): List<Product> = read("products", ::productFromJson)

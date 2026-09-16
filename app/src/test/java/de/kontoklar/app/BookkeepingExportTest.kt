@@ -17,4 +17,19 @@ class BookkeepingExportTest {
         assertEquals("57,00", row[10])
         assertEquals("Erhalten 119,00 · Rest 238,00", row[8])
     }
+
+    @Test fun recordedPaymentCsvRowPreservesActualPaymentDateAndDoesNotInferTax() {
+        val invoice = Invoice(number = "RE-8", customer = "Beispiel", description = "Arbeit", amountCents = 10_000)
+        val payment = InvoicePayment(invoiceId = invoice.id, amountCents = 4_000, date = "2026-09-12")
+
+        val row = invoicePaymentCsvFields(payment, invoice)
+
+        assertEquals("Zahlungseingang", row[0])
+        assertEquals("RE-8", row[1])
+        assertEquals("2026-09-12", row[4])
+        assertEquals("40,00", row[6])
+        assertEquals("Manuell", row[7])
+        assertEquals("", row[9])
+        assertEquals("", row[10])
+    }
 }

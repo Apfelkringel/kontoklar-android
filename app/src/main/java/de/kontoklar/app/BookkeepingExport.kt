@@ -7,7 +7,13 @@ import java.io.File
 import java.io.FileOutputStream
 import java.time.LocalDate
 
-fun shareBookkeepingCsv(context: Context, invoices: List<Invoice>, expenses: List<Expense>, bankTransactions: List<BankTransaction> = emptyList()) {
+fun shareBookkeepingCsv(
+    context: Context,
+    invoices: List<Invoice>,
+    expenses: List<Expense>,
+    bankTransactions: List<BankTransaction> = emptyList(),
+    invoicePayments: List<InvoicePayment> = emptyList()
+) {
     val directory = File(context.cacheDir, "exports").apply { check(isDirectory || mkdirs()) { "Exportordner ist nicht verfügbar." } }
     val file = File(directory, "KontoKlar-Buchungen-${LocalDate.now()}.csv")
     FileOutputStream(file).bufferedWriter(Charsets.UTF_8).use { writer ->
@@ -15,6 +21,13 @@ fun shareBookkeepingCsv(context: Context, invoices: List<Invoice>, expenses: Lis
         writer.appendLine(listOf("Typ", "Nummer", "Kunde/Händler", "Beschreibung/Kategorie", "Datum", "Fällig", "Betrag (EUR)", "Status", "Notiz", "Nettobetrag (EUR)", "Ausgewiesene USt./Vorsteuer (EUR)").joinToString(";") { csvField(it) })
         invoices.sortedBy(Invoice::date).forEach { invoice ->
             writer.appendLine(invoiceCsvFields(invoice).joinToString(";") { csvField(it) })
+        }
+        val invoicesById = invoices.associateBy(Invoice::id)
+        val transactionsById = bankTransactions.associateBy(BankTransaction::id)
+        invoicePayments.sortedBy(InvoicePayment::date).forEach { payment ->
+            val invoice = invoicesById[payment.invoiceId] ?: return@forEach
+            writer.appendLine(invoicePaymentCsvFields(payment, invoice, payment.bankTransactionId?.let(transactionsById::get))
+                .joinToString(";") { csvField(it) })
         }
         expenses.sortedBy(Expense::date).forEach { expense ->
             writer.appendLine(expenseCsvFields(expense).joinToString(";") { csvField(it) })
@@ -54,6 +67,13 @@ internal fun expenseCsvFields(expense: Expense): List<String> {
     val vatAmount = expense.inputVatCents?.let(::centsAsGermanDecimal).orEmpty()
     return listOf("Ausgabe", "", expense.merchant, expense.category, expense.date, "", centsAsGermanDecimal(expense.amountCents), "Erfasst", expense.note, netAmount, vatAmount)
 }
+
+internal fun invoicePaymentCsvFields(payment: InvoicePayment, invoice: Invoice, transaction: BankTransaction? = null): List<String> = listOf(
+    "Zahlungseingang", invoice.number, invoice.customer,
+    if (transaction == null) "Manueller Zahlungseintrag" else listOf(transaction.counterparty, transaction.reference).filter(String::isNotBlank).joinToString(" · "),
+    payment.date, "", centsAsGermanDecimal(payment.amountCents), payment.source,
+    "Rechnung ${invoice.number}${transaction?.description?.takeIf(String::isNotBlank)?.let { " · $it" }.orEmpty()}", "", ""
+)
 
 internal fun csvField(value: String): String {
     val safe = if (value.trimStart().firstOrNull() in setOf('=', '+', '-', '@')) "'$value" else value

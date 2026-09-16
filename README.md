@@ -18,6 +18,7 @@ Native Android app prototype built with Kotlin and Jetpack Compose. The app uses
 - Local business profile settings for sender identity/address, e-invoice email, optional tax identifiers, invoice prefix, payment term, and VAT rate. The prefix and payment term are applied to new drafts; gross amounts are split into net and VAT for the limited XRechnung export.
 - Store user-entered business activity and legal-form descriptions with the sender profile for document context; these fields do not infer legal or tax treatment.
 - Save the configured VAT rate as a snapshot on each newly created invoice draft (including drafts converted from accepted offers); PDF, multi-position XRechnung, tax overview, and CSV use that saved rate even if the business profile rate later changes. Older invoices without a snapshot are called out and not silently assigned a rate in tax/CSV reports.
+- Record invoice payment receipts individually with amount, actual entry date, and source (manual or reconciled CAMT bank transaction); partial-payment history stays linked to the invoice, is included in encrypted backups and bookkeeping CSV exports, and matched historic CAMT entries are migrated without inventing dates for older manual balances.
 - Manually record expenses with merchant, amount, category, date, and note.
 - Record the exact input-VAT amount shown on an expense receipt (optional), preserve it through backups and e-invoice imports, include it in the bookkeeping CSV, and show documented input VAT and the number of expenses missing a VAT breakdown in the yearly overview. These are source-document amounts, not a deductible-tax determination.
 - Edit, inspect, and delete saved expenses; reopen their attached image or PDF receipt.
@@ -47,7 +48,7 @@ There is no account/login or cloud sync, live bank/PSD2 connection, automatic ba
 
 ## Publishing an update
 
-Push a version tag such as `v0.36.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
+Push a version tag such as `v0.37.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
 
 ## Build
 

@@ -53,7 +53,7 @@ fun taxYearReport(
         netExpenseCentsWithVatBreakdown = expensesWithVat.sumOf { it.amountCents - (it.inputVatCents ?: 0L) },
         expensesWithoutVatBreakdownCount = yearExpenses.count { it.inputVatCents == null },
         recordedDifferenceCents = invoiceTotal - expenseTotal,
-        openInvoiceCents = openInvoices.sumOf { it.amountCents },
+        openInvoiceCents = openInvoices.sumOf(::invoiceOutstandingCents),
         overdueInvoiceCount = overdueInvoices.size,
         missingReceiptCount = yearExpenses.count { it.receiptUri.isNullOrBlank() }
     )

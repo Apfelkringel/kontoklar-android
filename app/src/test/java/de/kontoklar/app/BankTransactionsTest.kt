@@ -50,6 +50,17 @@ class BankTransactionsTest {
         assertNull(suggestInvoiceMatch(transaction.copy(description = "", reference = "", counterparty = "Unknown"), listOf(invoice, competing)))
     }
 
+    @Test fun incomingTransferCanMatchPartialInvoiceRemainderAndPaymentIsCapped() {
+        val invoice = Invoice(number = "RE-42", customer = "Musterkunde GmbH", description = "Leistung", amountCents = 11900, paidCents = 3000, status = "Teilbezahlt")
+        val transaction = parseCamt053(ByteArrayInputStream(statement.toByteArray())).transactions.first { it.amountCents > 0 }
+
+        assertEquals(invoice, suggestInvoiceMatch(transaction.copy(amountCents = 4_000), listOf(invoice)))
+        assertEquals(4_900L, invoiceOutstandingCents(applyInvoicePayment(invoice, 4_000)))
+        assertEquals("Bezahlt", applyInvoicePayment(invoice, 8_900).status)
+        assertNull(suggestInvoiceMatch(transaction.copy(amountCents = 9_000), listOf(invoice)))
+        assertTrue(runCatching { applyInvoicePayment(invoice, 9_000) }.isFailure)
+    }
+
     @Test fun debitCanBeMatchedToUniqueRecordedExpenseWithoutChangingItsData() {
         val debit = parseCamt053(ByteArrayInputStream(statement.toByteArray())).transactions.single { it.amountCents < 0 }
         val expense = Expense(id = "expense-1", merchant = "BueroPartner", category = "Büro", amountCents = 1995, date = "2026-09-15")

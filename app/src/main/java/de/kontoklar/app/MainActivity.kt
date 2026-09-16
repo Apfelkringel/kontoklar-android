@@ -238,13 +238,15 @@ private fun KontoKlarApp() {
                     expenses = expenses,
                     onImportStatement = { bankStatementImportLauncher.launch(arrayOf("application/xml", "text/xml", "application/camt.053+xml", "*/*")) },
                     onMatchInvoice = { transaction, invoice ->
-                        if (transaction.amountCents > 0 && invoice.status != "Bezahlt" && invoice.status != "Entwurf") {
-                            invoices = invoices.upsertInvoice(invoice.copy(status = "Bezahlt"))
+                        if (transaction.amountCents > 0 && transaction.amountCents <= invoiceOutstandingCents(invoice) && invoice.status != "Entwurf") {
+                            val paidInvoice = runCatching { applyInvoicePayment(invoice, transaction.amountCents) }.getOrNull()
+                            if (paidInvoice == null) return@BankingScreen
+                            invoices = invoices.upsertInvoice(paidInvoice)
                             store.saveInvoices(invoices)
                             bankTransactions = bankTransactions.map { if (it.id == transaction.id) it.copy(matchedInvoiceId = invoice.id) else it }
                             store.saveBankTransactions(bankTransactions)
-                            InvoiceReminderScheduler.cancel(context, invoice.id)
-                            toast = "Zahlung ${invoice.number} zugeordnet und Rechnung als bezahlt markiert"
+                            if (paidInvoice.status == "Bezahlt") InvoiceReminderScheduler.cancel(context, invoice.id)
+                            toast = if (paidInvoice.status == "Bezahlt") "Zahlung ${invoice.number} zugeordnet; Rechnung vollständig bezahlt" else "Teilzahlung ${invoice.number} zugeordnet · Rest ${formatEuro(invoiceOutstandingCents(paidInvoice))}"
                         }
                     },
                     onMatchExpense = { transaction, expense ->
@@ -473,11 +475,12 @@ private fun KontoKlarApp() {
                 onEdit = { invoiceToEdit = invoice; selectedInvoice = null; dialog = "Rechnung bearbeiten" },
                 onDelete = { invoiceToDelete = invoice; selectedInvoice = null },
                 onStatusChange = { status ->
-                    invoices = invoices.map { if (it.id == invoice.id) it.copy(status = status) else it }
+                    invoices = invoices.map { if (it.id == invoice.id) it.copy(status = status, paidCents = if (status == "Bezahlt") it.amountCents else it.paidCents) else it }
                     store.saveInvoices(invoices)
                     if (status == "Versendet" && android.os.Build.VERSION.SDK_INT >= 33 &&
                         androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
                     ) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    if (status == "Bezahlt") InvoiceReminderScheduler.cancel(context, invoice.id)
                     selectedInvoice = null
                     toast = "Rechnungsstatus: $status"
                 }
@@ -630,7 +633,8 @@ private fun Dashboard(invoices: List<Invoice>, expenses: List<Expense>, bankTran
                 Text("Alle", color = Forest, fontSize = 13.sp, modifier = Modifier.clickable { onNavigate(Page.Taxes) })
             }
         }
-        if (invoices.any { it.status != "Bezahlt" }) item { TaskRow("Offene Rechnungen", "Entwürfe und unbezahlte Rechnungen", formatEuro(invoices.filter { it.status != "Bezahlt" }.sumOf { it.amountCents }), Icons.Default.Schedule, onClick = { onNavigate(Page.Invoices) }) }
+        val openInvoices = invoices.filter { it.status != "Entwurf" && invoiceOutstandingCents(it) > 0 }
+        if (openInvoices.isNotEmpty()) item { TaskRow("Offene Rechnungen", "Unbezahlte Restbeträge", formatEuro(openInvoices.sumOf(::invoiceOutstandingCents)), Icons.Default.Schedule, onClick = { onNavigate(Page.Invoices) }) }
         item { SectionTitle("Letzte Aktivitäten", "") }
         items((invoices.take(2).map { Entry(it.customer, "Rechnung · ${it.status}", formatEuro(it.amountCents), Icons.Default.Description, Mint) } + expenses.take(2).map { Entry(it.merchant, "${it.category} · ${it.date}", "−${formatEuro(it.amountCents)}", Icons.Default.Receipt, Color(0xFFFFF1E5)) }).take(4)) { EntryRow(it) }
         if (invoices.isEmpty() && expenses.isEmpty()) item { EmptyState("Dein Arbeitsbereich ist bereit", "Lege eine Rechnung oder Ausgabe an. Deine Daten bleiben auf diesem Gerät.") }
@@ -640,12 +644,13 @@ private fun Dashboard(invoices: List<Invoice>, expenses: List<Expense>, bankTran
 @Composable
 private fun InvoiceScreen(invoices: List<Invoice>, onAction: (String) -> Unit, onSelect: (Invoice) -> Unit) {
     LazyColumn(contentPadding = PaddingValues(18.dp, 14.dp, 18.dp, 90.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { MetricCard("Offen", formatEuro(invoices.filter { it.status != "Bezahlt" }.sumOf { it.amountCents }), "${invoices.count { it.status != "Bezahlt" }} Rechnungen", Icons.Default.Schedule, Modifier.weight(1f)); MetricCard("Gesamt", formatEuro(invoices.sumOf { it.amountCents }), "${invoices.size} Rechnungen", Icons.Default.ShowChart, Modifier.weight(1f)) } }
+        val openInvoices = invoices.filter { it.status != "Entwurf" && invoiceOutstandingCents(it) > 0 }
+        item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { MetricCard("Offen", formatEuro(openInvoices.sumOf(::invoiceOutstandingCents)), "${openInvoices.size} Rechnungen", Icons.Default.Schedule, Modifier.weight(1f)); MetricCard("Gesamt", formatEuro(invoices.sumOf { it.amountCents }), "${invoices.size} Rechnungen", Icons.Default.ShowChart, Modifier.weight(1f)) } }
         item { SectionTitle("Alle Rechnungen", "2026") }
         if (invoices.isEmpty()) item { EmptyState("Noch keine Rechnungen", "Tippe auf +, um deinen ersten Entwurf anzulegen.") }
         items(invoices, key = { it.id }) { invoice ->
-            val icon = if (invoice.status == "Bezahlt") Icons.Default.CheckCircle else Icons.Default.Description
-            EntryRow(Entry(invoice.customer, "${invoice.number} · ${invoice.status} · fällig ${invoice.dueDate}", formatEuro(invoice.amountCents), icon, if (invoice.status == "Bezahlt") Mint else Color(0xFFE6F2EB)), onClick = { onSelect(invoice) })
+            val icon = if (invoiceOutstandingCents(invoice) == 0L && invoice.status != "Entwurf") Icons.Default.CheckCircle else Icons.Default.Description
+            EntryRow(Entry(invoice.customer, "${invoice.number} · ${invoice.status} · fällig ${invoice.dueDate}", formatEuro(if (invoice.status == "Entwurf") invoice.amountCents else invoiceOutstandingCents(invoice)), icon, if (icon == Icons.Default.CheckCircle) Mint else Color(0xFFE6F2EB)), onClick = { onSelect(invoice) })
         }
     }
 }
@@ -907,6 +912,7 @@ private fun InvoiceDetailsDialog(
                 Text(invoice.customer, color = Ink, fontWeight = FontWeight.SemiBold)
                 invoiceLines(invoice).forEachIndexed { index, line -> Text("${index + 1}. ${line.description} · ${formatEuro(line.amountCents)}", color = Muted) }
                 Text("Betrag: ${formatEuro(invoice.amountCents)}", color = Ink)
+                if (invoice.status != "Entwurf") Text("Erhalten: ${formatEuro((invoice.amountCents - invoiceOutstandingCents(invoice)).coerceAtLeast(0))} · Restbetrag: ${formatEuro(invoiceOutstandingCents(invoice))}", color = Ink, fontWeight = FontWeight.Medium)
                 invoice.vatRatePercent?.let { rate ->
                     val amounts = invoiceTaxBreakdown(invoice, rate)
                     Text("USt.-Satz bei Erstellung: $rate % · Netto ${formatEuro(amounts.netCents)} · USt. ${formatEuro(amounts.vatCents)}", color = Muted, fontSize = 12.sp)
@@ -931,8 +937,8 @@ private fun InvoiceDetailsDialog(
                     }
                     Text("Nach der Fälligkeit kann KontoKlar einmalig eine Zahlungserinnerung senden. Android-Mitteilungen müssen dafür erlaubt sein.", color = Muted, fontSize = 11.sp)
                     Button(onClick = { onStatusChange("Versendet") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Forest)) { Text("Als versendet markieren") }
-                } else if (invoice.status == "Versendet") {
-                    Button(onClick = { onStatusChange("Bezahlt") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Forest)) { Text("Als bezahlt markieren") }
+                } else if (invoice.status == "Versendet" || invoice.status == "Teilbezahlt") {
+                    Button(onClick = { onStatusChange("Bezahlt") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Forest)) { Text(if (invoice.status == "Teilbezahlt") "Restbetrag manuell als bezahlt markieren" else "Als bezahlt markieren") }
                 }
             }
         },

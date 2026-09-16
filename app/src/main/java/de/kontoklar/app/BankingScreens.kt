@@ -134,9 +134,9 @@ private fun BankTransactionCard(
         AlertDialog(
             onDismissRequest = { confirmMatch = false },
             title = { Text("Zahlung zuordnen?") },
-            text = { Text("${transaction.counterparty} hat ${formatEuro(transaction.amountCents)} überwiesen. Rechnung ${suggestion.number} als bezahlt markieren?") },
+            text = { Text("${transaction.counterparty} hat ${formatEuro(transaction.amountCents)} überwiesen. Den Betrag der Rechnung ${suggestion.number} zuordnen? Offener Rest danach: ${formatEuro(invoiceOutstandingCents(suggestion) - transaction.amountCents)}.") },
             confirmButton = {
-                TextButton(onClick = { confirmMatch = false; onMatchInvoice(transaction, suggestion) }) { Text("Als bezahlt markieren") }
+                TextButton(onClick = { confirmMatch = false; onMatchInvoice(transaction, suggestion) }) { Text("Zahlung zuordnen") }
             },
             dismissButton = { TextButton(onClick = { confirmMatch = false }) { Text("Abbrechen") } }
         )
@@ -173,7 +173,7 @@ private fun BankTransactionCard(
                 linkedInvoice != null -> Text("Zugeordnet zu ${linkedInvoice.number} · ${linkedInvoice.status}", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 transaction.matchedInvoiceId != null -> Text("Zugeordnete Rechnung nicht mehr vorhanden", color = Muted, fontSize = 12.sp)
                 suggestion != null -> OutlinedButton(onClick = { confirmMatch = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text("${suggestion.number} als bezahlt markieren", color = Forest)
+                    Text("${formatEuro(transaction.amountCents)} auf ${suggestion.number} buchen", color = Forest)
                 }
                 transaction.amountCents > 0 -> Text("Keine eindeutige offene Rechnung mit diesem Betrag gefunden.", color = Muted, fontSize = 11.sp)
                 expenseSuggestion != null -> OutlinedButton(onClick = { confirmExpenseMatch = true }, modifier = Modifier.fillMaxWidth()) {

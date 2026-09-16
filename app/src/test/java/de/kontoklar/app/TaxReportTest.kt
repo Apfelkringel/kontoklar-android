@@ -5,6 +5,14 @@ import org.junit.Test
 import java.time.LocalDate
 
 class TaxReportTest {
+    @Test fun openInvoiceTotalUsesUnpaidRemainderAfterPartialPayment() {
+        val partial = Invoice(number = "R-1", customer = "A", description = "Service", amountCents = 10_000, date = "2026-03-01", dueDate = "2026-03-02", status = "Teilbezahlt", paidCents = 2_500)
+        val report = taxYearReport(2026, listOf(partial), emptyList(), LocalDate.parse("2026-03-05"))
+
+        assertEquals(7_500L, report.openInvoiceCents)
+        assertEquals(1, report.overdueInvoiceCount)
+    }
+
     @Test fun yearlyOverviewExcludesDraftsAndSeparatesOpenAndOverdueInvoices() {
         val invoices = listOf(
             Invoice(number = "RE-1", customer = "A", description = "Work", amountCents = 10000, date = "2026-01-02", dueDate = "2026-02-02", status = "Bezahlt"),

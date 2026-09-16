@@ -94,7 +94,7 @@ private fun parseCamtEntry(entry: CamtNode, iban: String): BankTransaction? {
 fun suggestInvoiceMatch(transaction: BankTransaction, invoices: List<Invoice>): Invoice? {
     if (transaction.amountCents <= 0 || transaction.matchedInvoiceId != null) return null
     val candidates = invoices.filter {
-        it.amountCents == transaction.amountCents && it.status != "Bezahlt" && it.status != "Entwurf"
+        it.status != "Entwurf" && transaction.amountCents <= invoiceOutstandingCents(it)
     }
     if (candidates.isEmpty()) return null
     fun score(invoice: Invoice): Int {

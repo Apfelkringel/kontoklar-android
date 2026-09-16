@@ -33,7 +33,7 @@ object InvoiceReminderScheduler {
             NotificationManagerCompat.from(context).areNotificationsEnabled()
 
     fun schedule(context: Context, invoice: Invoice, force: Boolean = false) {
-        if (invoice.status != "Versendet") {
+        if (invoice.status == "Entwurf" || invoiceOutstandingCents(invoice) == 0L) {
             cancel(context, invoice.id)
             return
         }
@@ -71,7 +71,7 @@ object InvoiceReminderScheduler {
     }
 
     fun reconcile(context: Context, invoices: List<Invoice>, forceSchedule: Boolean = false) {
-        val activeIds = invoices.filter { it.status == "Versendet" }.mapTo(mutableSetOf()) { it.id }
+        val activeIds = invoices.filter { it.status != "Entwurf" && invoiceOutstandingCents(it) > 0 }.mapTo(mutableSetOf()) { it.id }
         val removedIds = preferences(context).getStringSet("scheduled_invoice_ids", emptySet()).orEmpty().toSet() - activeIds
         removedIds.forEach { cancel(context, it) }
         invoices.forEach { invoice ->
@@ -137,7 +137,7 @@ class InvoiceReminderReceiver : BroadcastReceiver() {
         val invoiceId = InvoiceReminderScheduler.invoiceId(intent) ?: return
         val expectedDueDate = InvoiceReminderScheduler.expectedDueDate(intent) ?: return
         val invoice = LocalData(context).invoices().firstOrNull { it.id == invoiceId }
-        if (invoice == null || invoice.status != "Versendet" || invoice.dueDate != expectedDueDate) {
+        if (invoice == null || invoice.status == "Entwurf" || invoiceOutstandingCents(invoice) == 0L || invoice.dueDate != expectedDueDate) {
             InvoiceReminderScheduler.cancel(context, invoiceId)
             return
         }

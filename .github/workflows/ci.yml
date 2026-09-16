@@ -23,7 +23,7 @@ jobs:
           packages: ''
       - uses: gradle/actions/setup-gradle@v6
       - name: Test and assemble debug APK
-        run: ./gradlew testDebugUnitTest assembleDebug
+        run: ./gradlew testDebugUnitTest assembleDebug assembleDebugAndroidTest
 
   banking-api:
     runs-on: ubuntu-latest

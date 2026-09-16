@@ -35,7 +35,7 @@ jobs:
           echo "KONTOKLAR_SIGNING_PASSWORD=$SIGNING_PASSWORD" >> "$GITHUB_ENV"
           echo "KONTOKLAR_SIGNING_KEY_ALIAS=$SIGNING_KEY_ALIAS" >> "$GITHUB_ENV"
       - name: Test and build signed APK
-        run: ./gradlew testDebugUnitTest assembleRelease
+        run: ./gradlew testDebugUnitTest assembleDebugAndroidTest assembleRelease
       - name: Publish APK release
         env:
           GH_TOKEN: ${{ github.token }}

@@ -61,3 +61,4 @@ Requires JDK 17+ and Android SDK Platform 35 / Build Tools 34.0.0. The workspace
 ```
 
 The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
+The Trade Republic PDF extraction integration test can be run on a connected Android device or emulator with `./gradlew connectedDebugAndroidTest`.

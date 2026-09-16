@@ -998,6 +998,7 @@ private fun TaxScreen(
     var deadlineError by remember { mutableStateOf<String?>(null) }
     val report = remember(selectedYear, invoices, expenses) { taxYearReport(selectedYear, invoices, expenses) }
     val cashTotals = remember(selectedYear, invoicePayments, expensePayments) { recordedCashYearTotals(selectedYear, invoicePayments, expensePayments) }
+    val cashExpensesByCategory = remember(selectedYear, expenses, expensePayments) { cashExpenseYearByCategory(selectedYear, expenses, expensePayments) }
     val legacyInvoicePaymentsWithoutDateCents = invoices.filter { it.status != "Entwurf" }.sumOf { invoice ->
         (invoice.paidCents - invoicePayments.filter { it.invoiceId == invoice.id }.sumOf(InvoicePayment::amountCents)).coerceAtLeast(0L)
     }
@@ -1056,9 +1057,19 @@ private fun TaxScreen(
                     Text("Erfasste Zahlungsdaten · ${report.year}", color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Text("Zahlungseingänge nach tatsächlichem Erfassungsdatum: ${formatEuro(cashTotals.paymentReceiptsCents)} · ${cashTotals.receiptCount} Zahlung(en)", color = Ink, fontSize = 12.sp)
                     Text("Auszahlungen nach erfasstem Zahlungsdatum: ${formatEuro(cashTotals.expensePaymentsCents)} · ${cashTotals.expensePaymentCount} Zahlung(en)", color = Ink, fontSize = 12.sp)
+                    if (cashExpensesByCategory.isNotEmpty()) {
+                        Spacer(Modifier.height(2.dp))
+                        Text("Auszahlungen nach eigener Kategorie (Zahlungsjahr)", color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        cashExpensesByCategory.forEach { total ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(total.category, color = Muted, modifier = Modifier.weight(1f), fontSize = 12.sp)
+                                Text("${total.paymentCount} · ${formatEuro(total.paidCents)}", color = Ink, fontSize = 12.sp)
+                            }
+                        }
+                    }
                     if (legacyInvoicePaymentsWithoutDateCents > 0) Text("Altbestand ohne Zahlungsdatum (alle Jahre): ${formatEuro(legacyInvoicePaymentsWithoutDateCents)} Zahlungseingang(e)", color = Muted, fontSize = 11.sp)
                     if (expensesWithoutPaymentEventCount > 0) Text("${expensesWithoutPaymentEventCount} Ausgabe(n) aus ${report.year} ohne erfasste Auszahlung (offen oder nicht dokumentiert)", color = Muted, fontSize = 11.sp)
-                    Text("Das sind nur dokumentierte Zahlungsereignisse, keine EÜR oder Steuerberechnung. Nicht eingetragene Zahlungen, Anlagen/AfA, private Anteile, durchlaufende Posten und steuerliche Korrekturen fehlen.", color = Muted, fontSize = 11.sp)
+                    Text("Nur dokumentierte Zahlungsereignisse, gruppiert nach eigener Kategorie – keine steuerliche Zuordnung, EÜR oder Steuerberechnung. Nicht eingetragene Zahlungen, Anlagen/AfA, private Anteile, durchlaufende Posten und steuerliche Korrekturen fehlen.", color = Muted, fontSize = 11.sp)
                 }
             }
         }

@@ -23,6 +23,20 @@ data class TaxYearReport(
 data class ExpenseCategoryTotal(val category: String, val amountCents: Long, val count: Int)
 data class FinancialMonthTotal(val month: Int, val issuedInvoiceCents: Long, val expenseCents: Long)
 data class RecordedCashYearTotals(val paymentReceiptsCents: Long, val expensePaymentsCents: Long, val receiptCount: Int, val expensePaymentCount: Int)
+data class CashExpenseCategoryTotal(val category: String, val paidCents: Long, val paymentCount: Int)
+
+/** Groups recorded expense payment events by their event year, never by receipt/document date. */
+fun cashExpenseYearByCategory(year: Int, expenses: List<Expense>, payments: List<ExpensePayment>): List<CashExpenseCategoryTotal> {
+    val categories = expenses.associateBy(Expense::id)
+    return payments.asSequence()
+        .filter { payment -> runCatching { LocalDate.parse(payment.date).year == year }.getOrDefault(false) }
+        .groupBy { payment ->
+            categories[payment.expenseId]?.category?.trim()?.takeIf(String::isNotBlank) ?:
+                if (payment.expenseId in categories) "Ohne Kategorie" else "Nicht zugeordnet"
+        }
+        .map { (category, records) -> CashExpenseCategoryTotal(category, records.sumOf(ExpensePayment::amountCents), records.size) }
+        .sortedWith(compareByDescending<CashExpenseCategoryTotal> { it.paidCents }.thenBy { it.category.lowercase() })
+}
 
 /** Totals only explicitly dated payment events; it is not an EÜR and omits tax-specific corrections and asset treatment. */
 fun recordedCashYearTotals(

@@ -120,4 +120,24 @@ class TaxReportTest {
         assertEquals(listOf(10_000L, 8000L, 500L), totals.map(ExpenseCategoryTotal::amountCents))
         assertEquals(listOf(2, 1, 1), totals.map(ExpenseCategoryTotal::count))
     }
+
+    @Test fun groupsExpensePaymentEventsByPaymentYearAndRecordedCategory() {
+        val expenses = listOf(
+            Expense(id = "e1", merchant = "Phone", category = "Software", amountCents = 10_000, date = "2025-12-20"),
+            Expense(id = "e2", merchant = "Office", category = "", amountCents = 5_000, date = "2026-01-20")
+        )
+        val payments = listOf(
+            ExpensePayment(expenseId = "e1", amountCents = 4_000, date = "2026-01-02"),
+            ExpensePayment(expenseId = "e1", amountCents = 6_000, date = "2025-12-30"),
+            ExpensePayment(expenseId = "e2", amountCents = 2_000, date = "2026-02-01"),
+            ExpensePayment(expenseId = "deleted", amountCents = 700, date = "2026-02-02"),
+            ExpensePayment(expenseId = "e2", amountCents = 900, date = "not-a-date")
+        )
+
+        val totals = cashExpenseYearByCategory(2026, expenses, payments)
+
+        assertEquals(listOf("Software", "Ohne Kategorie", "Nicht zugeordnet"), totals.map(CashExpenseCategoryTotal::category))
+        assertEquals(listOf(4_000L, 2_000L, 700L), totals.map(CashExpenseCategoryTotal::paidCents))
+        assertEquals(listOf(1, 1, 1), totals.map(CashExpenseCategoryTotal::paymentCount))
+    }
 }

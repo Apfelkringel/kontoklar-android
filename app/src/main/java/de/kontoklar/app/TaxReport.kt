@@ -22,6 +22,23 @@ data class TaxYearReport(
 
 data class ExpenseCategoryTotal(val category: String, val amountCents: Long, val count: Int)
 data class FinancialMonthTotal(val month: Int, val issuedInvoiceCents: Long, val expenseCents: Long)
+data class RecordedCashYearTotals(val paymentReceiptsCents: Long, val expensePaymentsCents: Long, val receiptCount: Int, val expensePaymentCount: Int)
+
+/** Totals only explicitly dated payment events; it is not an EÜR and omits tax-specific corrections and asset treatment. */
+fun recordedCashYearTotals(
+    year: Int,
+    invoicePayments: List<InvoicePayment>,
+    expensePayments: List<ExpensePayment>
+): RecordedCashYearTotals {
+    val receipts = invoicePayments.filter { runCatching { LocalDate.parse(it.date).year == year }.getOrDefault(false) }
+    val payments = expensePayments.filter { runCatching { LocalDate.parse(it.date).year == year }.getOrDefault(false) }
+    return RecordedCashYearTotals(
+        paymentReceiptsCents = receipts.sumOf(InvoicePayment::amountCents),
+        expensePaymentsCents = payments.sumOf(ExpensePayment::amountCents),
+        receiptCount = receipts.size,
+        expensePaymentCount = payments.size
+    )
+}
 
 /** Groups recorded gross invoice and expense amounts by document date; this is not a cash-flow or tax report. */
 fun financialYearTrend(year: Int, invoices: List<Invoice>, expenses: List<Expense>): List<FinancialMonthTotal> {

@@ -83,6 +83,7 @@ private fun KontoKlarApp() {
     var invoices by remember { mutableStateOf(store.invoices()) }
     var invoicePayments by remember { mutableStateOf(store.invoicePayments()) }
     var expenses by remember { mutableStateOf(store.expenses()) }
+    var expensePayments by remember { mutableStateOf(store.expensePayments()) }
     var bankTransactions by remember { mutableStateOf(store.bankTransactions()) }
     val liveBanking = remember { LiveBankingClient(context.applicationContext) }
     var bankInstitutions by remember { mutableStateOf<List<BankingInstitution>>(emptyList()) }
@@ -133,6 +134,8 @@ private fun KontoKlarApp() {
     LaunchedEffect(store) {
         withContext(Dispatchers.IO) { store.migrateMatchedInvoicePayments() }
         invoicePayments = store.invoicePayments()
+        withContext(Dispatchers.IO) { store.migrateMatchedExpensePayments() }
+        expensePayments = store.expensePayments()
         withContext(Dispatchers.IO) { cleanupReceiptWorkingCopies(context) }
         val priorExpenses = expenses
         val migrated = withContext(Dispatchers.IO) {
@@ -264,7 +267,7 @@ private fun KontoKlarApp() {
                 Page.Expenses -> ExpenseScreen(expenses, onAction = { action ->
                     if (action == "E-Rechnung empfangen") incomingInvoiceLauncher.launch(arrayOf("*/*")) else dialog = action
                 }, onSelect = { selectedExpense = it })
-                Page.Taxes -> TaxScreen(invoices = invoices, expenses = expenses, deadlines = taxDeadlines, onSaveDeadlines = { updated ->
+                Page.Taxes -> TaxScreen(invoices = invoices, invoicePayments = invoicePayments, expenses = expenses, expensePayments = expensePayments, deadlines = taxDeadlines, onSaveDeadlines = { updated ->
                     taxDeadlines = updated
                     store.saveTaxDeadlines(updated)
                     if (updated.any { !it.completed } && Build.VERSION.SDK_INT >= 33 &&
@@ -273,7 +276,7 @@ private fun KontoKlarApp() {
                     toast = "Fristenliste aktualisiert"
                 }, onAction = { action ->
                     when (action) {
-                        "Steuerberater teilen" -> runCatching { shareBookkeepingCsv(context, invoices, expenses, bankTransactions, invoicePayments) }
+                        "Steuerberater teilen" -> runCatching { shareBookkeepingCsv(context, invoices, expenses, bankTransactions, invoicePayments, expensePayments) }
                             .onFailure { toast = it.message ?: "Export konnte nicht erstellt werden." }
                         "Steuerprofil" -> dialog = "Unternehmensprofil"
                         else -> dialog = action
@@ -290,7 +293,7 @@ private fun KontoKlarApp() {
                     else if (action == "Wiederkehrende Rechnungen") recurringInvoicesOpen = true
                     else if (action == "Wiederkehrende Ausgaben") recurringExpensesOpen = true
                     else if (action == "Dokumente") documentsOpen = true
-                    else if (action == "Mit Buchhalter teilen") runCatching { shareBookkeepingCsv(context, invoices, expenses, bankTransactions, invoicePayments) }
+                    else if (action == "Mit Buchhalter teilen") runCatching { shareBookkeepingCsv(context, invoices, expenses, bankTransactions, invoicePayments, expensePayments) }
                         .onFailure { toast = it.message ?: "Export konnte nicht erstellt werden." }
                     else toast = "$action – wird eingerichtet"
                 })
@@ -393,9 +396,13 @@ private fun KontoKlarApp() {
                     },
                     onMatchExpense = { transaction, expense ->
                         if (transaction.amountCents < 0 && transaction.amountCents != Long.MIN_VALUE && -transaction.amountCents == expense.amountCents && bankTransactions.none { it.id != transaction.id && it.matchedExpenseId == expense.id }) {
-                            bankTransactions = bankTransactions.map { if (it.id == transaction.id) it.copy(matchedExpenseId = expense.id) else it }
-                            store.saveBankTransactions(bankTransactions)
-                            toast = "Bankabbuchung mit Ausgabe ${expense.merchant} abgeglichen"
+                            runCatching { store.recordExpensePayment(expense.id, -transaction.amountCents, LocalDate.parse(transaction.date), "Kontoauszug", transaction.id) }
+                                .onSuccess {
+                                    expensePayments = store.expensePayments()
+                                    bankTransactions = store.bankTransactions()
+                                    toast = "Bankabbuchung mit Ausgabe ${expense.merchant} abgeglichen"
+                                }
+                                .onFailure { toast = it.message ?: "Ausgabezahlung konnte nicht zugeordnet werden." }
                         }
                     }
                 )
@@ -418,11 +425,15 @@ private fun KontoKlarApp() {
             },
             onCreateExpense = { expense ->
                 val isEditing = expenses.any { it.id == expense.id }
-                expenses = expenses.upsertExpense(expense)
-                store.saveExpenses(expenses)
-                toast = if (isEditing) "Ausgabe aktualisiert" else "Ausgabe gespeichert"
-                expenseToEdit = null
-                dialog = null
+                if (expensePaidCents(expense, expensePayments) > expense.amountCents) {
+                    toast = "Der neue Ausgabenbetrag liegt unter den bereits erfassten Zahlungen. Passe zuerst die Zahlungen an."
+                } else {
+                    expenses = expenses.upsertExpense(expense)
+                    store.saveExpenses(expenses)
+                    toast = if (isEditing) "Ausgabe aktualisiert" else "Ausgabe gespeichert"
+                    expenseToEdit = null
+                    dialog = null
+                }
             },
             profile = profile,
             customers = customers,
@@ -733,9 +744,28 @@ private fun KontoKlarApp() {
         selectedExpense?.let { expense ->
             ExpenseDetailsDialog(
                 expense = expense,
+                payments = expensePayments.filter { it.expenseId == expense.id },
                 onDismiss = { selectedExpense = null },
                 onEdit = { expenseToEdit = expense; selectedExpense = null; dialog = "Ausgabe bearbeiten" },
                 onDelete = { expenseToDelete = expense; selectedExpense = null },
+                onRegisterPayment = { amountCents, date ->
+                    runCatching { store.recordExpensePayment(expense.id, amountCents, date) }
+                        .onSuccess {
+                            expensePayments = store.expensePayments()
+                            selectedExpense = expense
+                            toast = "Auszahlung von ${formatEuro(amountCents)} am $date erfasst"
+                        }
+                        .onFailure { toast = it.message ?: "Auszahlung konnte nicht erfasst werden." }
+                },
+                onDeletePayment = { paymentId ->
+                    runCatching { store.deleteExpensePayment(paymentId) }
+                        .onSuccess {
+                            expensePayments = store.expensePayments()
+                            bankTransactions = store.bankTransactions()
+                            toast = "Auszahlung entfernt; ein verknüpfter Bankumsatz ist wieder frei zuzuordnen."
+                        }
+                        .onFailure { toast = it.message ?: "Auszahlung konnte nicht entfernt werden." }
+                },
                 onOpenReceipt = {
                     runCatching {
                         val uri = decryptedReceiptForViewing(context, Uri.parse(expense.receiptUri))
@@ -752,10 +782,15 @@ private fun KontoKlarApp() {
                 text = { Text("${expense.merchant} · ${formatEuro(expense.amountCents)} wird von diesem Gerät entfernt. Der angehängte Originalbeleg bleibt in der Ablage erhalten.") },
                 confirmButton = {
                     TextButton(onClick = {
-                        expenses = expenses.withoutExpense(expense.id)
-                        store.saveExpenses(expenses)
-                        expenseToDelete = null
-                        toast = "Ausgabe gelöscht"
+                        runCatching { store.deleteExpense(expense.id) }
+                            .onSuccess {
+                                expenses = store.expenses()
+                                expensePayments = store.expensePayments()
+                                bankTransactions = store.bankTransactions()
+                                expenseToDelete = null
+                                toast = "Ausgabe und ihre Zahlungszuordnungen gelöscht"
+                            }
+                            .onFailure { toast = it.message ?: "Ausgabe konnte nicht gelöscht werden." }
                     }) { Text("Löschen", color = MaterialTheme.colorScheme.error) }
                 },
                 dismissButton = { TextButton(onClick = { expenseToDelete = null }) { Text("Abbrechen") } }
@@ -951,7 +986,10 @@ private fun ExpenseScreen(expenses: List<Expense>, onAction: (String) -> Unit, o
 }
 
 @Composable
-private fun TaxScreen(invoices: List<Invoice>, expenses: List<Expense>, deadlines: List<TaxDeadline>, onSaveDeadlines: (List<TaxDeadline>) -> Unit, onAction: (String) -> Unit) {
+private fun TaxScreen(
+    invoices: List<Invoice>, invoicePayments: List<InvoicePayment>, expenses: List<Expense>, expensePayments: List<ExpensePayment>,
+    deadlines: List<TaxDeadline>, onSaveDeadlines: (List<TaxDeadline>) -> Unit, onAction: (String) -> Unit
+) {
     var selectedYear by remember { mutableIntStateOf(LocalDate.now().year) }
     var deadlineDialog by remember { mutableStateOf(false) }
     var deadlineTitle by remember { mutableStateOf("") }
@@ -959,6 +997,13 @@ private fun TaxScreen(invoices: List<Invoice>, expenses: List<Expense>, deadline
     var deadlineNote by remember { mutableStateOf("") }
     var deadlineError by remember { mutableStateOf<String?>(null) }
     val report = remember(selectedYear, invoices, expenses) { taxYearReport(selectedYear, invoices, expenses) }
+    val cashTotals = remember(selectedYear, invoicePayments, expensePayments) { recordedCashYearTotals(selectedYear, invoicePayments, expensePayments) }
+    val legacyInvoicePaymentsWithoutDateCents = invoices.filter { it.status != "Entwurf" }.sumOf { invoice ->
+        (invoice.paidCents - invoicePayments.filter { it.invoiceId == invoice.id }.sumOf(InvoicePayment::amountCents)).coerceAtLeast(0L)
+    }
+    val expensesWithoutPaymentEventCount = expenses.count { expense ->
+        runCatching { LocalDate.parse(expense.date).year == selectedYear }.getOrDefault(false) && expensePaidCents(expense, expensePayments) == 0L
+    }
     LazyColumn(contentPadding = PaddingValues(18.dp, 14.dp, 18.dp, 90.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Card(colors = CardDefaults.cardColors(containerColor = Forest), shape = RoundedCornerShape(22.dp)) {
@@ -1002,6 +1047,18 @@ private fun TaxScreen(invoices: List<Invoice>, expenses: List<Expense>, deadline
                             Text("${total.count} · ${formatEuro(total.amountCents)}", color = Ink, fontWeight = FontWeight.SemiBold)
                         }
                     }
+                }
+            }
+        }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Erfasste Zahlungsdaten · ${report.year}", color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("Zahlungseingänge nach tatsächlichem Erfassungsdatum: ${formatEuro(cashTotals.paymentReceiptsCents)} · ${cashTotals.receiptCount} Zahlung(en)", color = Ink, fontSize = 12.sp)
+                    Text("Auszahlungen nach erfasstem Zahlungsdatum: ${formatEuro(cashTotals.expensePaymentsCents)} · ${cashTotals.expensePaymentCount} Zahlung(en)", color = Ink, fontSize = 12.sp)
+                    if (legacyInvoicePaymentsWithoutDateCents > 0) Text("Altbestand ohne Zahlungsdatum (alle Jahre): ${formatEuro(legacyInvoicePaymentsWithoutDateCents)} Zahlungseingang(e)", color = Muted, fontSize = 11.sp)
+                    if (expensesWithoutPaymentEventCount > 0) Text("${expensesWithoutPaymentEventCount} Ausgabe(n) aus ${report.year} ohne erfasste Auszahlung (offen oder nicht dokumentiert)", color = Muted, fontSize = 11.sp)
+                    Text("Das sind nur dokumentierte Zahlungsereignisse, keine EÜR oder Steuerberechnung. Nicht eingetragene Zahlungen, Anlagen/AfA, private Anteile, durchlaufende Posten und steuerliche Korrekturen fehlen.", color = Muted, fontSize = 11.sp)
                 }
             }
         }
@@ -1376,11 +1433,31 @@ private fun InvoiceDetailsDialog(
 @Composable
 private fun ExpenseDetailsDialog(
     expense: Expense,
+    payments: List<ExpensePayment>,
     onDismiss: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onRegisterPayment: (Long, LocalDate) -> Unit,
+    onDeletePayment: (String) -> Unit,
     onOpenReceipt: () -> Unit
 ) {
+    var paymentAmount by remember(expense.id) { mutableStateOf("") }
+    var paymentDate by remember(expense.id) { mutableStateOf(LocalDate.now().toString()) }
+    var paymentError by remember(expense.id) { mutableStateOf<String?>(null) }
+    var paymentToDelete by remember(expense.id) { mutableStateOf<ExpensePayment?>(null) }
+    val paidCents = expensePaidCents(expense, payments)
+    val outstandingCents = (expense.amountCents - paidCents).coerceAtLeast(0L)
+    paymentToDelete?.let { payment ->
+        AlertDialog(
+            onDismissRequest = { paymentToDelete = null },
+            title = { Text("Auszahlung entfernen?") },
+            text = { Text("${formatEuro(payment.amountCents)} vom ${payment.date} wird aus dem Zahlungsnachweis gelöscht. Eine zugeordnete Bankbuchung bleibt erhalten und wird wieder freigegeben.") },
+            confirmButton = {
+                TextButton(onClick = { paymentToDelete = null; onDeletePayment(payment.id) }) { Text("Entfernen", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { paymentToDelete = null }) { Text("Abbrechen") } }
+        )
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(expense.merchant, color = Ink, fontWeight = FontWeight.Bold) },
@@ -1388,6 +1465,45 @@ private fun ExpenseDetailsDialog(
             Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text("${expense.category} · ${expense.date}", color = Muted, fontSize = 12.sp)
                 Text(formatEuro(expense.amountCents), color = Ink, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text("Erfasste Auszahlungen: ${formatEuro(paidCents)} · Restbetrag: ${formatEuro(outstandingCents)}", color = Forest, fontSize = 12.sp)
+                payments.sortedBy(ExpensePayment::date).forEach { payment ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("${payment.date} · ${formatEuro(payment.amountCents)} · ${if (payment.source == "Kontoauszug") "Kontoauszug" else "manuell"}", color = Muted, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { paymentToDelete = payment }) { Text("Storno", color = MaterialTheme.colorScheme.error, fontSize = 11.sp) }
+                    }
+                }
+                if (outstandingCents > 0) {
+                    OutlinedTextField(
+                        value = paymentAmount,
+                        onValueChange = { paymentAmount = it; paymentError = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Auszahlung (€)") },
+                        supportingText = { Text("Noch offen: ${formatEuro(outstandingCents)}") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = paymentDate,
+                        onValueChange = { paymentDate = it; paymentError = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Zahlungsdatum (JJJJ-MM-TT)") },
+                        singleLine = true
+                    )
+                    paymentError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 11.sp) }
+                    OutlinedButton(onClick = {
+                        val cents = parseEuroCents(paymentAmount)
+                        val date = runCatching { LocalDate.parse(paymentDate) }.getOrNull()
+                        when {
+                            cents == null || cents <= 0 -> paymentError = "Bitte einen gültigen positiven Betrag eingeben."
+                            cents > outstandingCents -> paymentError = "Der Betrag ist höher als der offene Ausgabenbetrag."
+                            date == null -> paymentError = "Bitte gib ein gültiges Zahlungsdatum im Format JJJJ-MM-TT ein."
+                            else -> {
+                                onRegisterPayment(cents, date)
+                                paymentAmount = ""
+                                paymentDate = LocalDate.now().toString()
+                            }
+                        }
+                    }, modifier = Modifier.fillMaxWidth()) { Text("Auszahlung erfassen", color = Forest) }
+                }
                 expense.inputVatCents?.let { vat ->
                     Text("USt. laut Beleg: ${formatEuro(vat)}", color = Forest, fontSize = 13.sp)
                     Text("Nettoanteil rechnerisch: ${formatEuro(expense.amountCents - vat)}", color = Muted, fontSize = 12.sp)

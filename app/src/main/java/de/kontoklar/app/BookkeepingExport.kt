@@ -12,7 +12,8 @@ fun shareBookkeepingCsv(
     invoices: List<Invoice>,
     expenses: List<Expense>,
     bankTransactions: List<BankTransaction> = emptyList(),
-    invoicePayments: List<InvoicePayment> = emptyList()
+    invoicePayments: List<InvoicePayment> = emptyList(),
+    expensePayments: List<ExpensePayment> = emptyList()
 ) {
     val directory = File(context.cacheDir, "exports").apply { check(isDirectory || mkdirs()) { "Exportordner ist nicht verfügbar." } }
     val file = File(directory, "KontoKlar-Buchungen-${LocalDate.now()}.csv")
@@ -31,6 +32,12 @@ fun shareBookkeepingCsv(
         }
         expenses.sortedBy(Expense::date).forEach { expense ->
             writer.appendLine(expenseCsvFields(expense).joinToString(";") { csvField(it) })
+        }
+        val expensesById = expenses.associateBy(Expense::id)
+        expensePayments.sortedBy(ExpensePayment::date).forEach { payment ->
+            val expense = expensesById[payment.expenseId] ?: return@forEach
+            writer.appendLine(expensePaymentCsvFields(payment, expense, payment.bankTransactionId?.let(transactionsById::get))
+                .joinToString(";") { csvField(it) })
         }
         bankTransactions.sortedBy(BankTransaction::date).forEach { transaction ->
             val accountHint = transaction.accountIban.takeLast(4).takeIf(String::isNotBlank)?.let { "Konto ••••$it" }.orEmpty()
@@ -73,6 +80,13 @@ internal fun invoicePaymentCsvFields(payment: InvoicePayment, invoice: Invoice, 
     if (transaction == null) "Manueller Zahlungseintrag" else listOf(transaction.counterparty, transaction.reference).filter(String::isNotBlank).joinToString(" · "),
     payment.date, "", centsAsGermanDecimal(payment.amountCents), payment.source,
     "Rechnung ${invoice.number}${transaction?.description?.takeIf(String::isNotBlank)?.let { " · $it" }.orEmpty()}", "", ""
+)
+
+internal fun expensePaymentCsvFields(payment: ExpensePayment, expense: Expense, transaction: BankTransaction? = null): List<String> = listOf(
+    "Auszahlung", "", expense.merchant,
+    if (transaction == null) "Manuelle Ausgabenzahlung · ${expense.category}" else listOf(transaction.counterparty, transaction.reference).filter(String::isNotBlank).joinToString(" · "),
+    payment.date, "", centsAsGermanDecimal(payment.amountCents), payment.source,
+    "Ausgabe ${expense.id}${transaction?.description?.takeIf(String::isNotBlank)?.let { " · $it" }.orEmpty()}", "", ""
 )
 
 internal fun csvField(value: String): String {

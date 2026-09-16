@@ -32,4 +32,19 @@ class BookkeepingExportTest {
         assertEquals("", row[9])
         assertEquals("", row[10])
     }
+
+    @Test fun recordedExpensePaymentCsvRowPreservesPaymentDateAndSource() {
+        val expense = Expense(id = "expense-9", merchant = "Büro", category = "Material", amountCents = 9_500)
+        val payment = ExpensePayment(expenseId = expense.id, amountCents = 3_500, date = "2026-09-14")
+
+        val row = expensePaymentCsvFields(payment, expense)
+
+        assertEquals("Auszahlung", row[0])
+        assertEquals("Büro", row[2])
+        assertEquals("2026-09-14", row[4])
+        assertEquals("35,00", row[6])
+        assertEquals("Manuell", row[7])
+        assertEquals("", row[9])
+        assertEquals("", row[10])
+    }
 }

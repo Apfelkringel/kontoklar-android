@@ -474,6 +474,17 @@ private fun KontoKlarApp() {
                 onSharePdf = { runCatching { shareInvoiceDraft(context, invoice, profile) }.onFailure { toast = "PDF konnte nicht erstellt werden: ${it.message}" } },
                 onEdit = { invoiceToEdit = invoice; selectedInvoice = null; dialog = "Rechnung bearbeiten" },
                 onDelete = { invoiceToDelete = invoice; selectedInvoice = null },
+                onRegisterPayment = { cents ->
+                    runCatching { applyInvoicePayment(invoice, cents) }
+                        .onSuccess { updated ->
+                            invoices = invoices.upsertInvoice(updated)
+                            store.saveInvoices(invoices)
+                            selectedInvoice = updated
+                            if (updated.status == "Bezahlt") InvoiceReminderScheduler.cancel(context, invoice.id)
+                            toast = "Zahlung erfasst · Restbetrag ${formatEuro(invoiceOutstandingCents(updated))}"
+                        }
+                        .onFailure { toast = it.message ?: "Zahlung konnte nicht erfasst werden." }
+                },
                 onStatusChange = { status ->
                     invoices = invoices.map { if (it.id == invoice.id) it.copy(status = status, paidCents = if (status == "Bezahlt") it.amountCents else it.paidCents) else it }
                     store.saveInvoices(invoices)
@@ -902,8 +913,11 @@ private fun InvoiceDetailsDialog(
     onSharePdf: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onRegisterPayment: (Long) -> Unit,
     onStatusChange: (String) -> Unit
 ) {
+    var paymentAmount by remember(invoice.id, invoice.paidCents) { mutableStateOf("") }
+    var paymentError by remember(invoice.id, invoice.paidCents) { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(invoice.number.ifBlank { "Rechnung" }, color = Ink, fontWeight = FontWeight.Bold) },
@@ -938,6 +952,20 @@ private fun InvoiceDetailsDialog(
                     Text("Nach der Fälligkeit kann KontoKlar einmalig eine Zahlungserinnerung senden. Android-Mitteilungen müssen dafür erlaubt sein.", color = Muted, fontSize = 11.sp)
                     Button(onClick = { onStatusChange("Versendet") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Forest)) { Text("Als versendet markieren") }
                 } else if (invoice.status == "Versendet" || invoice.status == "Teilbezahlt") {
+                    OutlinedTextField(
+                        value = paymentAmount,
+                        onValueChange = { paymentAmount = it; paymentError = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Zahlungseingang (€)") },
+                        supportingText = { Text("Offen: ${formatEuro(invoiceOutstandingCents(invoice))}") },
+                        singleLine = true
+                    )
+                    paymentError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 11.sp) }
+                    OutlinedButton(onClick = {
+                        val cents = parseEuroCents(paymentAmount)
+                        if (cents == null || cents <= 0) paymentError = "Bitte einen gültigen positiven Betrag eingeben."
+                        else onRegisterPayment(cents)
+                    }, modifier = Modifier.fillMaxWidth()) { Text("Zahlung erfassen", color = Forest) }
                     Button(onClick = { onStatusChange("Bezahlt") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Forest)) { Text(if (invoice.status == "Teilbezahlt") "Restbetrag manuell als bezahlt markieren" else "Als bezahlt markieren") }
                 }
             }

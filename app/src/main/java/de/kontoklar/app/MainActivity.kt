@@ -235,6 +235,7 @@ private fun KontoKlarApp() {
                 Page.Banking -> BankingScreen(
                     transactions = bankTransactions,
                     invoices = invoices,
+                    expenses = expenses,
                     onImportStatement = { bankStatementImportLauncher.launch(arrayOf("application/xml", "text/xml", "application/camt.053+xml", "*/*")) },
                     onMatchInvoice = { transaction, invoice ->
                         if (transaction.amountCents > 0 && invoice.status != "Bezahlt" && invoice.status != "Entwurf") {
@@ -244,6 +245,13 @@ private fun KontoKlarApp() {
                             store.saveBankTransactions(bankTransactions)
                             InvoiceReminderScheduler.cancel(context, invoice.id)
                             toast = "Zahlung ${invoice.number} zugeordnet und Rechnung als bezahlt markiert"
+                        }
+                    },
+                    onMatchExpense = { transaction, expense ->
+                        if (transaction.amountCents < 0 && transaction.amountCents != Long.MIN_VALUE && -transaction.amountCents == expense.amountCents && bankTransactions.none { it.id != transaction.id && it.matchedExpenseId == expense.id }) {
+                            bankTransactions = bankTransactions.map { if (it.id == transaction.id) it.copy(matchedExpenseId = expense.id) else it }
+                            store.saveBankTransactions(bankTransactions)
+                            toast = "Bankabbuchung mit Ausgabe ${expense.merchant} abgeglichen"
                         }
                     }
                 )

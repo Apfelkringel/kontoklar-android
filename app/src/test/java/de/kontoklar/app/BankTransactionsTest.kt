@@ -50,6 +50,19 @@ class BankTransactionsTest {
         assertNull(suggestInvoiceMatch(transaction.copy(description = "", reference = "", counterparty = "Unknown"), listOf(invoice, competing)))
     }
 
+    @Test fun debitCanBeMatchedToUniqueRecordedExpenseWithoutChangingItsData() {
+        val debit = parseCamt053(ByteArrayInputStream(statement.toByteArray())).transactions.single { it.amountCents < 0 }
+        val expense = Expense(id = "expense-1", merchant = "BueroPartner", category = "Büro", amountCents = 1995, date = "2026-09-15")
+        val competing = expense.copy(id = "expense-2", merchant = "Other Merchant")
+
+        assertEquals(expense, suggestExpenseMatch(debit, listOf(expense)))
+        assertEquals(expense, suggestExpenseMatch(debit, listOf(expense, competing)))
+        assertNull(suggestExpenseMatch(debit, listOf(expense), listOf(debit.copy(id = "other", matchedExpenseId = expense.id))))
+        assertNull(suggestExpenseMatch(debit.copy(matchedExpenseId = expense.id), listOf(expense)))
+        assertNull(suggestExpenseMatch(debit.copy(amountCents = -1994), listOf(expense)))
+        assertNull(suggestExpenseMatch(debit.copy(counterparty = "Unknown", description = "", reference = ""), listOf(expense, competing)))
+    }
+
     @Test fun rejectsDoctypeAndUnsupportedCurrencies() {
         val hostile = """<!DOCTYPE Document [<!ENTITY x SYSTEM "file:///etc/passwd">]><Document>&x;</Document>"""
         assertTrue(runCatching { parseCamt053(ByteArrayInputStream(hostile.toByteArray())) }.isFailure)

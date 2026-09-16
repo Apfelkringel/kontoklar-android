@@ -17,7 +17,8 @@ data class BankTransaction(
     val description: String,
     val amountCents: Long,
     val reference: String,
-    val matchedInvoiceId: String? = null
+    val matchedInvoiceId: String? = null,
+    val matchedExpenseId: String? = null
 )
 
 data class ParsedBankStatement(val accountIbans: List<String>, val transactions: List<BankTransaction>)
@@ -102,6 +103,30 @@ fun suggestInvoiceMatch(transaction: BankTransaction, invoices: List<Invoice>): 
         if (invoice.number.isNotBlank() && evidence.any { it.contains(invoice.number, ignoreCase = true) }) result += 10
         if (invoice.customer.isNotBlank() && evidence.any { it.contains(invoice.customer, ignoreCase = true) }) result += 5
         return result
+    }
+    val ranked = candidates.map { it to score(it) }.sortedByDescending { it.second }
+    return ranked.first().first.takeIf { ranked.size == 1 || ranked[0].second > ranked[1].second }
+}
+
+fun suggestExpenseMatch(
+    transaction: BankTransaction,
+    expenses: List<Expense>,
+    transactions: List<BankTransaction> = emptyList()
+): Expense? {
+    if (transaction.amountCents >= 0 || transaction.amountCents == Long.MIN_VALUE || transaction.matchedExpenseId != null) return null
+    val alreadyMatched = transactions.asSequence()
+        .filter { it.id != transaction.id }
+        .mapNotNull(BankTransaction::matchedExpenseId)
+        .toSet()
+    val candidates = expenses.filter { it.amountCents == -transaction.amountCents && it.id !in alreadyMatched }
+    if (candidates.isEmpty()) return null
+    fun score(expense: Expense): Int {
+        val evidence = listOf(transaction.counterparty, transaction.description, transaction.reference)
+            .map { it.lowercase().filter(Char::isLetterOrDigit) }
+            .filter(String::isNotBlank)
+        val merchant = expense.merchant.lowercase().filter(Char::isLetterOrDigit)
+        if (merchant.isBlank()) return 1
+        return if (evidence.any { it.contains(merchant) || merchant.contains(it) && it.length >= 4 }) 6 else 1
     }
     val ranked = candidates.map { it to score(it) }.sortedByDescending { it.second }
     return ranked.first().first.takeIf { ranked.size == 1 || ranked[0].second > ranked[1].second }

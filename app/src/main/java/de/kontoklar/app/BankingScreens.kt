@@ -44,8 +44,10 @@ import androidx.compose.ui.unit.sp
 fun BankingScreen(
     transactions: List<BankTransaction>,
     invoices: List<Invoice>,
+    expenses: List<Expense>,
     onImportStatement: () -> Unit,
-    onMatchInvoice: (BankTransaction, Invoice) -> Unit
+    onMatchInvoice: (BankTransaction, Invoice) -> Unit,
+    onMatchExpense: (BankTransaction, Expense) -> Unit
 ) {
     val credits = transactions.filter { it.amountCents > 0 }
     val debits = transactions.filter { it.amountCents < 0 }
@@ -99,7 +101,7 @@ fun BankingScreen(
             }
         }
         items(transactions.sortedByDescending(BankTransaction::date), key = BankTransaction::id) { transaction ->
-            BankTransactionCard(transaction, invoices, onMatchInvoice)
+            BankTransactionCard(transaction, invoices, expenses, transactions, onMatchInvoice, onMatchExpense)
         }
     }
 }
@@ -116,12 +118,18 @@ private fun BankMetric(label: String, value: String, modifier: Modifier = Modifi
 private fun BankTransactionCard(
     transaction: BankTransaction,
     invoices: List<Invoice>,
-    onMatchInvoice: (BankTransaction, Invoice) -> Unit
+    expenses: List<Expense>,
+    transactions: List<BankTransaction>,
+    onMatchInvoice: (BankTransaction, Invoice) -> Unit,
+    onMatchExpense: (BankTransaction, Expense) -> Unit
 ) {
     val amountColor = if (transaction.amountCents >= 0) Forest else Ink
     val linkedInvoice = invoices.firstOrNull { it.id == transaction.matchedInvoiceId }
     val suggestion = suggestInvoiceMatch(transaction, invoices)
+    val linkedExpense = expenses.firstOrNull { it.id == transaction.matchedExpenseId }
+    val expenseSuggestion = suggestExpenseMatch(transaction, expenses, transactions)
     var confirmMatch by remember(transaction.id) { mutableStateOf(false) }
+    var confirmExpenseMatch by remember(transaction.id) { mutableStateOf(false) }
     if (confirmMatch && suggestion != null) {
         AlertDialog(
             onDismissRequest = { confirmMatch = false },
@@ -131,6 +139,17 @@ private fun BankTransactionCard(
                 TextButton(onClick = { confirmMatch = false; onMatchInvoice(transaction, suggestion) }) { Text("Als bezahlt markieren") }
             },
             dismissButton = { TextButton(onClick = { confirmMatch = false }) { Text("Abbrechen") } }
+        )
+    }
+    if (confirmExpenseMatch && expenseSuggestion != null) {
+        AlertDialog(
+            onDismissRequest = { confirmExpenseMatch = false },
+            title = { Text("Ausgabe zuordnen?") },
+            text = { Text("Die Abbuchung von ${transaction.counterparty} über ${formatEuro(-transaction.amountCents)} passt zum erfassten Beleg „${expenseSuggestion.merchant}“ vom ${expenseSuggestion.date}. Die Zuordnung ändert keine Beträge oder Steuerangaben.") },
+            confirmButton = {
+                TextButton(onClick = { confirmExpenseMatch = false; onMatchExpense(transaction, expenseSuggestion) }) { Text("Ausgabe zuordnen") }
+            },
+            dismissButton = { TextButton(onClick = { confirmExpenseMatch = false }) { Text("Abbrechen") } }
         )
     }
     Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
@@ -149,12 +168,18 @@ private fun BankTransactionCard(
             if (transaction.description.isNotBlank()) Text(transaction.description, color = Muted, fontSize = 12.sp)
             if (transaction.reference.isNotBlank()) Text("Referenz: ${transaction.reference}", color = Muted, fontSize = 10.sp)
             when {
+                linkedExpense != null -> Text("Abgeglichen mit Ausgabe · ${linkedExpense.merchant}", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                transaction.matchedExpenseId != null -> Text("Zugeordnete Ausgabe nicht mehr vorhanden", color = Muted, fontSize = 12.sp)
                 linkedInvoice != null -> Text("Zugeordnet zu ${linkedInvoice.number} · ${linkedInvoice.status}", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 transaction.matchedInvoiceId != null -> Text("Zugeordnete Rechnung nicht mehr vorhanden", color = Muted, fontSize = 12.sp)
                 suggestion != null -> OutlinedButton(onClick = { confirmMatch = true }, modifier = Modifier.fillMaxWidth()) {
                     Text("${suggestion.number} als bezahlt markieren", color = Forest)
                 }
                 transaction.amountCents > 0 -> Text("Keine eindeutige offene Rechnung mit diesem Betrag gefunden.", color = Muted, fontSize = 11.sp)
+                expenseSuggestion != null -> OutlinedButton(onClick = { confirmExpenseMatch = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Ausgabe ${expenseSuggestion.merchant} abgleichen", color = Forest)
+                }
+                transaction.amountCents < 0L -> Text("Keine eindeutige erfasste Ausgabe mit diesem Betrag gefunden.", color = Muted, fontSize = 11.sp)
             }
         }
     }

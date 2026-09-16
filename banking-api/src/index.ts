@@ -57,11 +57,11 @@ export default {
           bankConnectionName: bank ? `KontoKlar – ${bank.name}` : "KontoKlar – Bankverbindung",
           // Let Web Form 2.0 search and select a bank when no quick-pick was requested.
           ...(bank ? { bank: { id: Number(bank.id) } } : {}),
-          // KontoKlar currently imports payment-account transactions only.
-          accountTypes: ["CHECKING"],
+          // Checking plus securities covers the user's primary banking and broker accounts.
+          accountTypes: ["CHECKING", "SECURITY"],
           maxDaysForDownload: 90,
-          skipBalancesDownload: true,
-          skipPositionsDownload: true,
+          skipBalancesDownload: false,
+          skipPositionsDownload: false,
           loadOwnerData: false,
         };
         const form = await providerJson(
@@ -297,17 +297,28 @@ async function connectionSnapshot(
   // finAPI's Accounts API returns an AccountList (not a pageable list).
   const accountQuery = new URLSearchParams({ bankConnectionIds: connection.id });
   const accountData = await providerJson(env, "access", `/api/v2/accounts?${accountQuery}`, token);
-  const accounts = collection(accountData, ["accounts", "items"]);
+  const providerAccounts = collection(accountData, ["accounts", "items"]);
   const ibanByAccountId = new Map<string, string>();
   const currencyByAccountId = new Map<string, string>();
   const accountIds: string[] = [];
-  for (const account of accounts) {
+  const accounts: ProviderRow[] = [];
+  for (const account of providerAccounts) {
     const id = nonEmptyString(account.id);
     if (!id) continue;
     accountIds.push(id);
     const iban = nonEmptyString(account.iban) || nonEmptyString(account.accountIban) || "";
     ibanByAccountId.set(id, iban);
-    currencyByAccountId.set(id, nonEmptyString(account.currency) || "");
+    currencyByAccountId.set(id, nonEmptyString(account.accountCurrency) || nonEmptyString(account.currency) || "");
+    const accountType = nonEmptyString(account.accountType) || "Unknown";
+    const currency = nonEmptyString(account.accountCurrency) || nonEmptyString(account.currency) || "";
+    accounts.push({
+      id,
+      type: accountType,
+      name: nonEmptyString(account.accountName) || nonEmptyString(account.product) || accountType,
+      currency,
+      balanceMinor: minorUnits(account.balance),
+      asOfDate: nonEmptyString(account.balanceDate) || "",
+    });
   }
 
   const transactions: ProviderRow[] = [];
@@ -332,12 +343,70 @@ async function connectionSnapshot(
   }
   if (hasMoreTransactions) throw new HttpError(502, "Der Abruf der Umsätze hat das sichere Seitenlimit erreicht. Bitte erneut synchronisieren.");
 
+  const securityAccountIds = accounts.filter((account) => account.type === "Security").map((account) => String(account.id));
+  const securities: ProviderRow[] = [];
+  let hasMoreSecurities = false;
+  for (let page = 1; page <= MAX_TRANSACTION_PAGES && securityAccountIds.length > 0; page++) {
+    const query = new URLSearchParams({ accountIds: securityAccountIds.join(","), page: String(page), perPage: String(TRANSACTIONS_PER_PAGE) });
+    const data = await providerJson(env, "access", `/api/v2/securities?${query}`, token);
+    const rows = collection(data, ["securities", "items"]);
+    securities.push(...rows);
+    const paging = data.paging;
+    if (paging && typeof paging === "object" && !Array.isArray(paging) && "pageCount" in paging) {
+      const pageCount = (paging as ProviderRow).pageCount;
+      if (typeof pageCount !== "number" || !Number.isSafeInteger(pageCount) || pageCount < page) {
+        throw new HttpError(502, "Der Anbieter hat ungültige Seiteninformationen für Depotpositionen geliefert.");
+      }
+      hasMoreSecurities = page < pageCount;
+    } else {
+      hasMoreSecurities = rows.length === TRANSACTIONS_PER_PAGE;
+    }
+    if (!hasMoreSecurities) break;
+  }
+  if (hasMoreSecurities) throw new HttpError(502, "Der Abruf der Depotpositionen hat das sichere Seitenlimit erreicht. Bitte erneut synchronisieren.");
+
   return {
     id: connection.id,
     bankName: connection.bankName,
     status: connection.status,
+    accounts,
     transactions: transactions.flatMap((row) => normalizeTransaction(row, ibanByAccountId, currencyByAccountId)),
+    securities: securities.flatMap((row) => normalizeSecurity(row, connection.id, new Set(securityAccountIds))),
   };
+}
+
+function minorUnits(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const minor = Math.round(value * 100);
+  return Number.isSafeInteger(minor) ? minor : null;
+}
+
+function normalizeSecurity(row: ProviderRow, connectionId: string, securityAccountIds: Set<string>): ProviderRow[] {
+  const id = nonEmptyString(row.id);
+  const accountId = nonEmptyString(row.accountId);
+  const name = nonEmptyString(row.name);
+  if (!id || !accountId || !securityAccountIds.has(accountId) || !name) return [];
+  const quantity = typeof row.quantityNominal === "number" && Number.isFinite(row.quantityNominal) ? row.quantityNominal : null;
+  const quoteCurrency = nonEmptyString(row.quoteCurrency) || "";
+  const valueCurrency = nonEmptyString(row.marketValueCurrency) || "";
+  const dateValue = nonEmptyString(row.quoteDate);
+  return [{
+    id,
+    accountId,
+    connectionId,
+    name,
+    isin: nonEmptyString(row.isin) || "",
+    wkn: nonEmptyString(row.wkn) || "",
+    quantityNominal: quantity,
+    quantityType: nonEmptyString(row.quantityNominalType) || "",
+    quoteType: nonEmptyString(row.quoteType) || "",
+    quoteMinor: minorUnits(row.quote),
+    quoteCurrency,
+    marketValueMinor: minorUnits(row.marketValue),
+    marketValueCurrency: valueCurrency,
+    profitOrLossMinor: minorUnits(row.profitOrLoss),
+    quoteDate: dateValue?.slice(0, 10) || "",
+  }];
 }
 
 function normalizeTransaction(row: ProviderRow, ibanByAccountId: Map<string, string>, currencyByAccountId: Map<string, string>): ProviderRow[] {

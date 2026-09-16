@@ -11,7 +11,12 @@ import java.util.Base64
 data class BankingInstitution(val id: String, val name: String)
 data class LiveBankConnection(val id: String, val bankName: String, val status: String)
 data class BankLinkSession(val id: String, val authorizationUrl: String)
-data class LiveBankSnapshot(val connection: LiveBankConnection, val transactions: List<BankTransaction>)
+data class LiveBankSnapshot(
+    val connection: LiveBankConnection,
+    val transactions: List<BankTransaction>,
+    val accounts: List<BankAccountSummary>,
+    val securities: List<BankSecurityPosition>
+)
 data class BankSyncResult(val status: String, val authorizationUrl: String? = null, val snapshot: LiveBankSnapshot? = null)
 
 /** Client for KontoKlar's own server-side Open Banking adapter. Provider secrets never belong in the APK. */
@@ -65,7 +70,18 @@ class LiveBankingClient(context: Context, private val baseUrl: String = BuildCon
             )
         }
         val state = connectionFromJson(snapshotJson)
-        return BankSyncResult(status, snapshot = LiveBankSnapshot(state, transactions))
+        val accounts = snapshotJson.optJSONArray("accounts").orEmpty().asList { row ->
+            BankAccountSummary("live:${row.getString("id")}", state.id, row.optString("name"), row.optString("type"), row.optString("currency"),
+                row.takeUnless { it.isNull("balanceMinor") }?.optLong("balanceMinor"), row.optString("asOfDate"))
+        }
+        val securities = snapshotJson.optJSONArray("securities").orEmpty().asList { row ->
+            BankSecurityPosition(row.getString("id"), "live:${row.getString("accountId")}", state.id, row.optString("name"),
+                row.optString("isin"), row.optString("wkn"), row.takeUnless { it.isNull("quantityNominal") }?.optDouble("quantityNominal"),
+                row.optString("quantityType"), row.optString("quoteType"), row.takeUnless { it.isNull("quoteMinor") }?.optLong("quoteMinor"), row.optString("quoteCurrency"),
+                row.takeUnless { it.isNull("marketValueMinor") }?.optLong("marketValueMinor"), row.optString("marketValueCurrency"),
+                row.takeUnless { it.isNull("profitOrLossMinor") }?.optLong("profitOrLossMinor"), row.optString("quoteDate"))
+        }
+        return BankSyncResult(status, snapshot = LiveBankSnapshot(state, transactions, accounts, securities))
     }
 
     fun delete(connectionId: String) {

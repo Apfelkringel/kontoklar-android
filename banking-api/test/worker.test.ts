@@ -201,7 +201,7 @@ test("starts the provider-hosted bank search without preselecting a bank", async
     });
     assert.ok(importPayload);
     assert.equal("bank" in importPayload!, false);
-    assert.deepEqual(importPayload!.accountTypes, ["CHECKING"]);
+    assert.deepEqual(importPayload!.accountTypes, ["CHECKING", "SECURITY"]);
     assert.equal(importPayload!.bankConnectionName, "KontoKlar – Bankverbindung");
   } finally {
     globalThis.fetch = originalFetch;
@@ -306,9 +306,9 @@ test("creates a provider-hosted bank consent and normalizes linked EUR transacti
     if (url.pathname === "/api/webForms/bankConnectionImport") {
       const payload = JSON.parse(String(init?.body));
       assert.equal(payload.bank.id, 24001);
-      assert.deepEqual(payload.accountTypes, ["CHECKING"]);
-      assert.equal(payload.skipBalancesDownload, true);
-      assert.equal(payload.skipPositionsDownload, true);
+      assert.deepEqual(payload.accountTypes, ["CHECKING", "SECURITY"]);
+      assert.equal(payload.skipBalancesDownload, false);
+      assert.equal(payload.skipPositionsDownload, false);
       return Response.json({ id: "session-1", url: "https://webform-sandbox.finapi.io/wf/session-1" }, { status: 201 });
     }
     if (url.pathname === "/api/v2/bankConnections") {
@@ -316,10 +316,17 @@ test("creates a provider-hosted bank consent and normalizes linked EUR transacti
     }
     if (url.pathname === "/api/v2/accounts") {
       assert.equal(url.searchParams.get("bankConnectionIds"), "987");
-      return Response.json({ accounts: [{ id: 77, iban: "DE02120300000000202051", currency: "EUR" }] });
+      return Response.json({ accounts: [
+        { id: 77, iban: "DE02120300000000202051", accountType: "Checking", accountName: "C24 Giro", accountCurrency: "EUR", balance: 1250.5, balanceDate: "2026-09-16" },
+        { id: 88, accountType: "Security", accountName: "TR Depot", accountCurrency: "EUR", balance: 503.25 },
+      ] });
     }
     if (url.pathname === "/api/v2/transactions") {
       return Response.json({ transactions: [{ id: 456, accountId: 77, amount: -12.34, currency: "EUR", bankBookingDate: "2026-09-15 12:30:00", counterpartName: "Stadtwerke", purpose: "Abschlag", endToEndId: "ref-1" }] });
+    }
+    if (url.pathname === "/api/v2/securities") {
+      assert.equal(url.searchParams.get("accountIds"), "88");
+      return Response.json({ securities: [{ id: 900, accountId: 88, name: "ETF Muster", isin: "IE00TEST1234", quantityNominal: 2.5, quantityNominalType: "PIECE", quote: 100.25, quoteCurrency: "EUR", quoteType: "ACTUAL", marketValue: 250.625, marketValueCurrency: "EUR", profitOrLoss: 12.3, quoteDate: "2026-09-15" }] });
     }
     return Response.json({ error: "unexpected test route" }, { status: 500 });
   };
@@ -336,7 +343,12 @@ test("creates a provider-hosted bank consent and normalizes linked EUR transacti
     assert.equal(snapshot.status, 200);
     assert.deepEqual(await snapshot.json(), {
       id: "987", bankName: "C24", status: "READY",
+      accounts: [
+        { id: "77", type: "Checking", name: "C24 Giro", currency: "EUR", balanceMinor: 125050, asOfDate: "2026-09-16" },
+        { id: "88", type: "Security", name: "TR Depot", currency: "EUR", balanceMinor: 50325, asOfDate: "" },
+      ],
       transactions: [{ id: "77:456", accountIban: "DE02120300000000202051", date: "2026-09-15", counterparty: "Stadtwerke", description: "Abschlag", amountCents: -1234, reference: "ref-1" }],
+      securities: [{ id: "900", accountId: "88", connectionId: "987", name: "ETF Muster", isin: "IE00TEST1234", wkn: "", quantityNominal: 2.5, quantityType: "PIECE", quoteType: "ACTUAL", quoteMinor: 10025, quoteCurrency: "EUR", marketValueMinor: 25063, marketValueCurrency: "EUR", profitOrLossMinor: 1230, quoteDate: "2026-09-15" }],
     });
   } finally {
     globalThis.fetch = originalFetch;
@@ -451,7 +463,9 @@ test("runs an explicit user-present sync with PSU metadata and returns the refre
       status: "COMPLETED",
       snapshot: {
         id: "987", bankName: "C24", status: "READY",
+        accounts: [{ id: "77", type: "Unknown", name: "Unknown", currency: "EUR", balanceMinor: null, asOfDate: "" }],
         transactions: [{ id: "77:456", accountIban: "DE02120300000000202051", date: "2026-09-16", counterparty: "Arbeitgeber", description: "Gehalt", amountCents: 321, reference: "" }],
+        securities: [],
       },
     });
     assert.equal(env.DB.syncTasks.size, 0);

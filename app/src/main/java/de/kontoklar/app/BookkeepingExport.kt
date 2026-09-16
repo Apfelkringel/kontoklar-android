@@ -45,7 +45,7 @@ fun shareBookkeepingCsv(
                 "Bankumsatz", transaction.reference, transaction.counterparty, transaction.description,
                 transaction.date, "", centsAsGermanDecimal(kotlin.math.abs(transaction.amountCents)),
                 if (transaction.amountCents > 0) "Eingang" else "Ausgang",
-                listOf(accountHint, transaction.matchedInvoiceId?.let { "Rechnungs-ID $it" }.orEmpty(), transaction.matchedExpenseId?.let { "Ausgaben-ID $it" }.orEmpty()).filter(String::isNotBlank).joinToString(" · "), "", ""
+                listOf(accountHint, transaction.matchedInvoiceId?.let { "Rechnungs-ID $it" }.orEmpty(), transaction.matchedExpenseId?.let { "Ausgaben-ID $it" }.orEmpty(), transaction.userClassification.takeIf(String::isNotBlank)?.let { "Eigene Kennzeichnung: $it" }.orEmpty()).filter(String::isNotBlank).joinToString(" · "), "", ""
             ).joinToString(";") { csvField(it) })
         }
     }

@@ -327,7 +327,8 @@ class LocalData(context: Context) {
         counterparty = it.optString("counterparty"), description = it.optString("description"),
         amountCents = it.optLong("amountCents"), reference = it.optString("reference"),
         matchedInvoiceId = it.optString("matchedInvoiceId").takeIf(String::isNotBlank),
-        matchedExpenseId = it.optString("matchedExpenseId").takeIf(String::isNotBlank)
+        matchedExpenseId = it.optString("matchedExpenseId").takeIf(String::isNotBlank),
+        userClassification = it.optString("userClassification")
     )
 
     private fun customerFromJson(it: JSONObject) = Customer(
@@ -408,6 +409,7 @@ class LocalData(context: Context) {
         .put("counterparty", transaction.counterparty).put("description", transaction.description)
         .put("amountCents", transaction.amountCents).put("reference", transaction.reference)
         .put("matchedInvoiceId", transaction.matchedInvoiceId).put("matchedExpenseId", transaction.matchedExpenseId)
+        .put("userClassification", transaction.userClassification)
 
     private fun expenseToJson(expense: Expense) = JSONObject()
         .put("id", expense.id).put("merchant", expense.merchant).put("category", expense.category)
@@ -445,6 +447,15 @@ class LocalData(context: Context) {
     fun saveExpensePayments(values: List<ExpensePayment>) = write("expense_payments", values.map(::expensePaymentToJson))
     fun saveBankTransactions(values: List<BankTransaction>) = write("bank_transactions", values.map(::bankTransactionToJson))
 
+    fun updateBankTransactionClassification(transactionId: String, classification: String) {
+        val current = bankTransactions()
+        val transaction = current.firstOrNull { it.id == transactionId } ?: error("Der Bankumsatz ist nicht mehr vorhanden.")
+        val updated = current.map { if (it.id == transactionId) classifyBankTransaction(transaction, classification) else it }
+        check(prefs.putStrings(mapOf("bank_transactions" to JSONArray(updated.map(::bankTransactionToJson)).toString()))) {
+            "Die Kennzeichnung des Bankumsatzes konnte nicht gespeichert werden."
+        }
+    }
+
     fun recordInvoicePayment(
         invoiceId: String,
         amountCents: Long,
@@ -473,7 +484,7 @@ class LocalData(context: Context) {
             require(transaction.matchedExpenseId == null && (transaction.matchedInvoiceId == null || transaction.matchedInvoiceId == invoiceId)) {
                 "Der Bankumsatz ist bereits einer anderen Buchung zugeordnet."
             }
-            val updatedTransactions = transactions.map { if (it.id == bankTransactionId) it.copy(matchedInvoiceId = invoiceId) else it }
+            val updatedTransactions = transactions.map { if (it.id == bankTransactionId) it.copy(matchedInvoiceId = invoiceId, userClassification = "") else it }
             values["bank_transactions"] = JSONArray(updatedTransactions.map(::bankTransactionToJson)).toString()
         }
         check(prefs.putStrings(values)) { "Rechnung und Zahlungseingang konnten nicht dauerhaft gespeichert werden." }
@@ -503,7 +514,7 @@ class LocalData(context: Context) {
             require(transaction.matchedInvoiceId == null && (transaction.matchedExpenseId == null || transaction.matchedExpenseId == expenseId)) {
                 "Der Bankumsatz ist bereits einer anderen Buchung zugeordnet."
             }
-            val updatedTransactions = transactions.map { if (it.id == bankTransactionId) it.copy(matchedExpenseId = expenseId) else it }
+            val updatedTransactions = transactions.map { if (it.id == bankTransactionId) it.copy(matchedExpenseId = expenseId, userClassification = "") else it }
             values["bank_transactions"] = JSONArray(updatedTransactions.map(::bankTransactionToJson)).toString()
         }
         check(prefs.putStrings(values)) { "Ausgabe und Zahlung konnten nicht dauerhaft gespeichert werden." }

@@ -80,4 +80,15 @@ class BankTransactionsTest {
         val usd = statement.replace("Ccy=\"EUR\"", "Ccy=\"USD\"")
         assertTrue(runCatching { parseCamt053(ByteArrayInputStream(usd.toByteArray())) }.exceptionOrNull()?.message?.contains("nur EUR") == true)
     }
+
+    @Test fun userClassificationIsExplicitAndCannotConflictWithReconciledRecords() {
+        val transaction = parseCamt053(ByteArrayInputStream(statement.toByteArray())).transactions.last()
+        val classified = classifyBankTransaction(transaction, "Privat")
+        assertEquals("Privat", classified.userClassification)
+        assertEquals(transaction.id, classified.id)
+        assertEquals(transaction.amountCents, classified.amountCents)
+        assertEquals("", classifyBankTransaction(classified, "").userClassification)
+        assertTrue(runCatching { classifyBankTransaction(transaction, "Betriebsausgabe") }.isFailure)
+        assertTrue(runCatching { classifyBankTransaction(transaction.copy(matchedExpenseId = "expense-1"), "Privat") }.isFailure)
+    }
 }

@@ -21,6 +21,22 @@ data class TaxYearReport(
 )
 
 data class ExpenseCategoryTotal(val category: String, val amountCents: Long, val count: Int)
+data class FinancialMonthTotal(val month: Int, val issuedInvoiceCents: Long, val expenseCents: Long)
+
+/** Groups recorded gross invoice and expense amounts by document date; this is not a cash-flow or tax report. */
+fun financialYearTrend(year: Int, invoices: List<Invoice>, expenses: List<Expense>): List<FinancialMonthTotal> {
+    val invoiceTotals = LongArray(12)
+    val expenseTotals = LongArray(12)
+    invoices.asSequence().filter { it.status != "Entwurf" }.forEach { invoice ->
+        runCatching { LocalDate.parse(invoice.date) }.getOrNull()?.takeIf { it.year == year }
+            ?.let { invoiceTotals[it.monthValue - 1] += invoice.amountCents }
+    }
+    expenses.forEach { expense ->
+        runCatching { LocalDate.parse(expense.date) }.getOrNull()?.takeIf { it.year == year }
+            ?.let { expenseTotals[it.monthValue - 1] += expense.amountCents }
+    }
+    return (0 until 12).map { month -> FinancialMonthTotal(month + 1, invoiceTotals[month], expenseTotals[month]) }
+}
 
 fun taxYearReport(
     year: Int,

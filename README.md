@@ -5,6 +5,7 @@ Native Android app prototype built with Kotlin and Jetpack Compose. The app uses
 ## Implemented
 
 - Dashboard with totals derived from locally saved invoices and expenses.
+- Year-selectable dashboard with monthly bars comparing issued invoice gross amounts and recorded expense gross amounts by document date; invoice drafts are excluded and the view is explicitly not a cash-flow, profit, or tax calculation.
 - Create invoice drafts with customer, up to 20 separately described gross-price positions, and a configurable due date. Existing one-line invoices are loaded as a single position when edited. Manually or bank-imported partial payments retain a paid-to-date amount and calculate the remaining balance without marking the invoice fully paid prematurely.
 - Create local offers with up to 20 separately described positions, share multi-page draft PDFs, track sent/accepted/rejected/expired states, and convert accepted offers to a linked invoice draft once while preserving all positions.
 - Maintain a local customer directory with search and editable names, email, billing address, and tax identifier; select a saved customer for new invoices and snapshot those billing details into the invoice draft.

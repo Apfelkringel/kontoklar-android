@@ -823,19 +823,23 @@ private fun Header(title: String, profile: BusinessProfile) {
 
 @Composable
 private fun Dashboard(invoices: List<Invoice>, expenses: List<Expense>, bankTransactions: List<BankTransaction>, onNavigate: (Page) -> Unit) {
-    val invoiceTotal = invoices.sumOf { it.amountCents }
-    val expenseTotal = expenses.sumOf { it.amountCents }
+    var selectedYear by remember { mutableIntStateOf(LocalDate.now().year) }
+    val report = remember(selectedYear, invoices, expenses) { taxYearReport(selectedYear, invoices, expenses) }
+    val monthlyTotals = remember(selectedYear, invoices, expenses) { financialYearTrend(selectedYear, invoices, expenses) }
+    val peakMonthCents = monthlyTotals.maxOfOrNull { maxOf(it.issuedInvoiceCents, it.expenseCents) } ?: 0L
+    val invoiceTotal = report.issuedInvoiceCents
+    val expenseTotal = report.expenseCents
     LazyColumn(contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 90.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = Forest)) {
                 Column(Modifier.fillMaxWidth().padding(22.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("ERFASSTES RECHNUNGSVOLUMEN", color = Color.White.copy(alpha = .76f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        Text("GESTELLTE RECHNUNGEN · $selectedYear", color = Color.White.copy(alpha = .76f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                         Icon(Icons.Default.ReceiptLong, null, tint = Color.White.copy(alpha = .8f), modifier = Modifier.size(18.dp))
                     }
                     Spacer(Modifier.height(8.dp))
                     Text(formatEuro(invoiceTotal), color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Bold)
-                    Text("Lokale Entwürfe und Rechnungen · kein Bankkontostand", color = Color.White.copy(alpha = .78f), fontSize = 12.sp)
+                    Text("Bruttosumme ausgestellter Rechnungen · Entwürfe ausgenommen", color = Color.White.copy(alpha = .78f), fontSize = 12.sp)
                     Spacer(Modifier.height(20.dp))
                     HorizontalDivider(color = Color.White.copy(alpha = .2f))
                     Spacer(Modifier.height(15.dp))
@@ -846,11 +850,47 @@ private fun Dashboard(invoices: List<Invoice>, expenses: List<Expense>, bankTran
                 }
             }
         }
-        item { SectionTitle("Dein Überblick", "Geschäftsjahr 2026") }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SectionTitle("Dein Überblick", "Bruttowerte nach Belegdatum")
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = { selectedYear-- }) { Icon(Icons.Default.ChevronLeft, "Vorjahr", tint = Forest) }
+                Text("$selectedYear", color = Ink, fontWeight = FontWeight.Bold)
+                IconButton(onClick = { if (selectedYear < LocalDate.now().year) selectedYear++ }, enabled = selectedYear < LocalDate.now().year) { Icon(Icons.Default.ChevronRight, "Folgejahr", tint = Forest) }
+            }
+        }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MetricCard("Rechnungen", formatEuro(invoiceTotal), "${invoices.size} erfasst", Icons.Default.TrendingUp, Modifier.weight(1f))
-                MetricCard("Ausgaben", formatEuro(expenseTotal), "${expenses.size} erfasst", Icons.Default.Receipt, Modifier.weight(1f))
+                MetricCard("Rechnungen", formatEuro(invoiceTotal), "${report.issuedInvoiceCount} ausgestellt", Icons.Default.TrendingUp, Modifier.weight(1f))
+                MetricCard("Ausgaben", formatEuro(expenseTotal), "${expenses.count { runCatching { LocalDate.parse(it.date).year == selectedYear }.getOrDefault(false) }} erfasst", Icons.Default.Receipt, Modifier.weight(1f))
+            }
+        }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(20.dp)) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("Monatsverlauf", color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Text("■ Rechnungen", color = Forest, fontSize = 11.sp)
+                        Text("■ Ausgaben", color = Color(0xFFBC6A33), fontSize = 11.sp)
+                    }
+                    monthlyTotals.forEachIndexed { index, total ->
+                        val invoiceFraction = if (peakMonthCents == 0L) 0f else (total.issuedInvoiceCents.toFloat() / peakMonthCents).coerceIn(0f, 1f)
+                        val expenseFraction = if (peakMonthCents == 0L) 0f else (total.expenseCents.toFloat() / peakMonthCents).coerceIn(0f, 1f)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                            Text(listOf("Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez")[index], color = Muted, fontSize = 11.sp, modifier = Modifier.width(28.dp))
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Box(Modifier.fillMaxWidth().height(5.dp).background(Mint, RoundedCornerShape(4.dp))) {
+                                    if (invoiceFraction > 0f) Box(Modifier.fillMaxWidth(invoiceFraction).fillMaxHeight().background(Forest, RoundedCornerShape(4.dp)))
+                                }
+                                Box(Modifier.fillMaxWidth().height(5.dp).background(Color(0xFFFFF1E5), RoundedCornerShape(4.dp))) {
+                                    if (expenseFraction > 0f) Box(Modifier.fillMaxWidth(expenseFraction).fillMaxHeight().background(Color(0xFFBC6A33), RoundedCornerShape(4.dp)))
+                                }
+                            }
+                            Text(formatEuro(maxOf(total.issuedInvoiceCents, total.expenseCents)), color = Ink, fontSize = 10.sp, modifier = Modifier.width(68.dp))
+                        }
+                    }
+                    Text("Balken zeigen je Monat den Anteil am höchsten Monatswert. Rechnungen werden nach Rechnungsdatum, Ausgaben nach Belegdatum gruppiert; unbezahlte Rechnungen sind enthalten. Keine Gewinn- oder Steuerberechnung.", color = Muted, fontSize = 10.sp)
+                }
             }
         }
         item {
@@ -876,7 +916,7 @@ private fun Dashboard(invoices: List<Invoice>, expenses: List<Expense>, bankTran
         val openInvoices = invoices.filter { it.status != "Entwurf" && invoiceOutstandingCents(it) > 0 }
         if (openInvoices.isNotEmpty()) item { TaskRow("Offene Rechnungen", "Unbezahlte Restbeträge", formatEuro(openInvoices.sumOf(::invoiceOutstandingCents)), Icons.Default.Schedule, onClick = { onNavigate(Page.Invoices) }) }
         item { SectionTitle("Letzte Aktivitäten", "") }
-        items((invoices.take(2).map { Entry(it.customer, "Rechnung · ${it.status}", formatEuro(it.amountCents), Icons.Default.Description, Mint) } + expenses.take(2).map { Entry(it.merchant, "${it.category} · ${it.date}", "−${formatEuro(it.amountCents)}", Icons.Default.Receipt, Color(0xFFFFF1E5)) }).take(4)) { EntryRow(it) }
+        items((invoices.sortedByDescending { it.date }.take(2).map { Entry(it.customer, "Rechnung · ${it.status}", formatEuro(it.amountCents), Icons.Default.Description, Mint) } + expenses.sortedByDescending { it.date }.take(2).map { Entry(it.merchant, "${it.category} · ${it.date}", "−${formatEuro(it.amountCents)}", Icons.Default.Receipt, Color(0xFFFFF1E5)) }).take(4)) { EntryRow(it) }
         if (invoices.isEmpty() && expenses.isEmpty()) item { EmptyState("Dein Arbeitsbereich ist bereit", "Lege eine Rechnung oder Ausgabe an. Deine Daten bleiben auf diesem Gerät.") }
     }
 }

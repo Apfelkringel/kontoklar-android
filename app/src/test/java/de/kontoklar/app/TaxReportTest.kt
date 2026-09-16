@@ -5,6 +5,25 @@ import org.junit.Test
 import java.time.LocalDate
 
 class TaxReportTest {
+    @Test fun monthlyDashboardTrendUsesSelectedYearAndExcludesInvoiceDrafts() {
+        val invoices = listOf(
+            Invoice(customer = "A", description = "Work", amountCents = 10_000, date = "2026-01-12", status = "Versendet"),
+            Invoice(customer = "B", description = "Work", amountCents = 7_000, date = "2026-01-18", status = "Entwurf"),
+            Invoice(customer = "C", description = "Work", amountCents = 5_000, date = "2025-12-31", status = "Bezahlt")
+        )
+        val expenses = listOf(
+            Expense(merchant = "Office", category = "Büro", amountCents = 2_500, date = "2026-01-15"),
+            Expense(merchant = "Old", category = "Büro", amountCents = 9_000, date = "2025-12-31"),
+            Expense(merchant = "Invalid", category = "Sonstiges", amountCents = 50, date = "invalid")
+        )
+
+        val trend = financialYearTrend(2026, invoices, expenses)
+
+        assertEquals(12, trend.size)
+        assertEquals(FinancialMonthTotal(1, 10_000, 2_500), trend.first())
+        assertEquals(FinancialMonthTotal(12, 0, 0), trend.last())
+    }
+
     @Test fun openInvoiceTotalUsesUnpaidRemainderAfterPartialPayment() {
         val partial = Invoice(number = "R-1", customer = "A", description = "Service", amountCents = 10_000, date = "2026-03-01", dueDate = "2026-03-02", status = "Teilbezahlt", paidCents = 2_500)
         val report = taxYearReport(2026, listOf(partial), emptyList(), LocalDate.parse("2026-03-05"))

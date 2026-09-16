@@ -160,7 +160,7 @@ private fun KontoKlarApp() {
             runCatching {
                 runCatching { context.contentResolver.takePersistableUriPermission(source, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                 withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(source)?.use(::parseBankStatement)
+                    context.contentResolver.openInputStream(source)?.use { parseBankStatement(it, context.applicationContext) }
                         ?: error("Der Kontoauszug kann nicht gelesen werden.")
                 }
             }.onSuccess { statement ->
@@ -371,7 +371,7 @@ private fun KontoKlarApp() {
                             bankingBusy = false
                         }
                     },
-                    onImportStatement = { bankStatementImportLauncher.launch(arrayOf("application/xml", "text/xml", "application/camt.053+xml", "*/*")) },
+                    onImportStatement = { bankStatementImportLauncher.launch(arrayOf("application/pdf", "application/xml", "text/xml", "application/camt.053+xml", "text/csv", "*/*")) },
                     onMatchInvoice = { transaction, invoice ->
                         if (transaction.amountCents > 0 && transaction.amountCents <= invoiceOutstandingCents(invoice) && invoice.status != "Entwurf") {
                             runCatching { store.recordInvoicePayment(invoice.id, transaction.amountCents, LocalDate.parse(transaction.date), "Kontoauszug", transaction.id) }

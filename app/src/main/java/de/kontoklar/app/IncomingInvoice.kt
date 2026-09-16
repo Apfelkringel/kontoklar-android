@@ -32,6 +32,15 @@ private const val CII_INVOICE_NAMESPACE = "urn:un:unece:uncefact:data:standard:C
 private val pdfBoxInitLock = Any()
 private var pdfBoxInitialized = false
 
+internal fun initializePdfBoxIfNeeded(context: Context) {
+    synchronized(pdfBoxInitLock) {
+        if (!pdfBoxInitialized) {
+            PDFBoxResourceLoader.init(context.applicationContext)
+            pdfBoxInitialized = true
+        }
+    }
+}
+
 fun parseIncomingInvoice(input: InputStream, sourceName: String, context: Context): ParsedIncomingInvoice {
     val buffered = if (input.markSupported()) input else BufferedInputStream(input)
     buffered.mark(5)
@@ -45,12 +54,7 @@ fun parseIncomingInvoice(input: InputStream, sourceName: String, context: Contex
 }
 
 private fun parseZugferdPdf(input: InputStream, sourceName: String, context: Context): ParsedIncomingInvoice {
-    synchronized(pdfBoxInitLock) {
-        if (!pdfBoxInitialized) {
-            PDFBoxResourceLoader.init(context.applicationContext)
-            pdfBoxInitialized = true
-        }
-    }
+    initializePdfBoxIfNeeded(context)
     val embeddedInvoice = PDDocument.load(
         LimitedInputStream(input, MAX_INCOMING_PDF_BYTES),
         MemoryUsageSetting.setupTempFileOnly()

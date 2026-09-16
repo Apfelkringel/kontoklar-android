@@ -150,7 +150,7 @@ fun BankingScreen(
         }
         item {
             Button(onClick = onImportStatement, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest)) {
-                Icon(Icons.Default.FileOpen, null); Spacer(Modifier.width(8.dp)); Text("Kontoauszug importieren · CAMT / CSV")
+                Icon(Icons.Default.FileOpen, null); Spacer(Modifier.width(8.dp)); Text("Kontoauszug importieren · CAMT / CSV / TR-PDF")
             }
         }
         item {
@@ -169,7 +169,7 @@ fun BankingScreen(
                     Icon(Icons.Default.SyncAlt, null, tint = Forest)
                     Spacer(Modifier.height(8.dp))
                     Text("Umsätze sicher abgleichen", color = Ink, fontWeight = FontWeight.SemiBold)
-                    Text("Importiere einen CAMT.053-Auszug oder einen CSV-Umsatzexport (C24 / comdirect).", color = Muted, fontSize = 12.sp)
+                    Text("Importiere CAMT.053, C24-/comdirect-CSV oder einen Trade-Republic-Kontoauszug als PDF. Dateien werden auf dem Gerät verarbeitet.", color = Muted, fontSize = 12.sp)
                 }
             }
         }

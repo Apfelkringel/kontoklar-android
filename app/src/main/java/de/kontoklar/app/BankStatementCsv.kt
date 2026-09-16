@@ -1,5 +1,6 @@
 package de.kontoklar.app
 
+import android.content.Context
 import java.io.InputStream
 import java.io.BufferedInputStream
 import java.math.BigDecimal
@@ -11,13 +12,15 @@ import java.time.LocalDate
 private const val MAX_BANK_CSV_BYTES = 20L * 1024 * 1024
 private const val MAX_BANK_CSV_ROWS = 50_000
 
-fun parseBankStatement(input: InputStream): ParsedBankStatement {
+fun parseBankStatement(input: InputStream, context: Context? = null): ParsedBankStatement {
     val buffered = if (input.markSupported()) input else BufferedInputStream(input)
     buffered.mark(512)
-    val prefix = ByteArray(512)
-    val count = buffered.read(prefix)
+    val head = buffered.readNBytes(512)
     buffered.reset()
-    val start = prefix.take(count.coerceAtLeast(0)).firstOrNull { !it.toInt().toChar().isWhitespace() && it != 0xEF.toByte() && it != 0xBB.toByte() && it != 0xBF.toByte() }
+    if (head.size >= 5 && String(head.copyOfRange(0, 5), Charsets.US_ASCII) == "%PDF-") {
+        return parseTradeRepublicStatementPdf(buffered, context ?: error("Zum Lesen des Trade-Republic-PDFs wird die Android-PDF-Komponente benötigt."))
+    }
+    val start = head.firstOrNull { !it.toInt().toChar().isWhitespace() && it != 0xEF.toByte() && it != 0xBB.toByte() && it != 0xBF.toByte() }
     return if (start == '<'.code.toByte()) parseCamt053(buffered) else parseBankStatementCsv(buffered)
 }
 

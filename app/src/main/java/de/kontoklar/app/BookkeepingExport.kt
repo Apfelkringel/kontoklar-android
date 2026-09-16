@@ -44,7 +44,7 @@ internal fun invoiceCsvFields(invoice: Invoice): List<String> {
     val amounts = invoice.vatRatePercent?.let { invoiceTaxBreakdown(invoice, it) }
     return listOf(
         "Rechnung", invoice.number, invoice.customer, invoiceLines(invoice).joinToString(" | ") { it.description }, invoice.date, invoice.dueDate,
-        centsAsGermanDecimal(invoice.amountCents), invoice.status, "",
+        centsAsGermanDecimal(invoice.amountCents), invoice.status, if (invoice.status == "Entwurf") "" else "Erhalten ${centsAsGermanDecimal((invoice.amountCents - invoiceOutstandingCents(invoice)).coerceAtLeast(0))} · Rest ${centsAsGermanDecimal(invoiceOutstandingCents(invoice))}",
         amounts?.netCents?.let(::centsAsGermanDecimal).orEmpty(), amounts?.vatCents?.let(::centsAsGermanDecimal).orEmpty()
     )
 }

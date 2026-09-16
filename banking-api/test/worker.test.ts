@@ -170,6 +170,44 @@ test("provisions an isolated provider user and returns only supported target ban
   }
 });
 
+test("starts the provider-hosted bank search without preselecting a bank", async () => {
+  const env = baseEnv();
+  const originalFetch = globalThis.fetch;
+  let importPayload: Record<string, unknown> | undefined;
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname === "/api/v2/oauth/token") {
+      const grant = new URLSearchParams(String(init?.body)).get("grant_type");
+      return Response.json({ access_token: grant === "client_credentials" ? "client-token" : "user-token" });
+    }
+    if (url.pathname === "/api/v2/users" && init?.method === "POST") return Response.json({ id: "user" }, { status: 201 });
+    if (url.pathname === "/api/webForms/bankConnectionImport") {
+      importPayload = JSON.parse(String(init?.body));
+      return Response.json({ id: "search-session", url: "https://webform-sandbox.finapi.io/wf/search-session" }, { status: 201 });
+    }
+    return Response.json({ error: "unexpected test route" }, { status: 500 });
+  };
+
+  try {
+    const response = await worker.fetch(new Request("https://api.test/v1/connections", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${"S".repeat(43)}`, "CF-Connecting-IP": "192.0.2.12", "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    }), env as never, {} as never);
+    assert.equal(response.status, 201);
+    assert.deepEqual(await response.json(), {
+      id: "search-session",
+      authorizationUrl: "https://webform-sandbox.finapi.io/wf/search-session",
+    });
+    assert.ok(importPayload);
+    assert.equal("bank" in importPayload!, false);
+    assert.deepEqual(importPayload!.accountTypes, ["CHECKING"]);
+    assert.equal(importPayload!.bankConnectionName, "KontoKlar – Bankverbindung");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("rejects excess new installations before persisting their D1 identity", async () => {
   const env = baseEnv();
   const originalFetch = globalThis.fetch;

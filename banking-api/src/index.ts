@@ -44,27 +44,32 @@ export default {
       }
       if (request.method === "POST" && path === "/v1/connections") {
         const body = await readJson(request);
-        const bankId = typeof body.bankId === "string" ? body.bankId : "";
-        if (!/^\d{1,12}$/.test(bankId)) throw new HttpError(400, "Ungültige Bankauswahl.");
-        const banks = await supportedBanks(accessToken, env);
-        const bank = banks.find((candidate) => candidate.id === bankId);
-        if (!bank) throw new HttpError(400, "Diese Bank ist für den Anbieter nicht freigeschaltet.");
+        const requestedBankId = body.bankId;
+        let bank: { id: string; name: string } | undefined;
+        if (requestedBankId !== undefined) {
+          if (typeof requestedBankId !== "string" || !/^\d{1,12}$/.test(requestedBankId)) {
+            throw new HttpError(400, "Ungültige Bankauswahl.");
+          }
+          bank = (await supportedBanks(accessToken, env)).find((candidate) => candidate.id === requestedBankId);
+          if (!bank) throw new HttpError(400, "Diese Bank ist für den Anbieter nicht freigeschaltet.");
+        }
+        const importRequest: ProviderRow = {
+          bankConnectionName: bank ? `KontoKlar – ${bank.name}` : "KontoKlar – Bankverbindung",
+          // Let Web Form 2.0 search and select a bank when no quick-pick was requested.
+          ...(bank ? { bank: { id: Number(bank.id) } } : {}),
+          // KontoKlar currently imports payment-account transactions only.
+          accountTypes: ["CHECKING"],
+          maxDaysForDownload: 90,
+          skipBalancesDownload: true,
+          skipPositionsDownload: true,
+          loadOwnerData: false,
+        };
         const form = await providerJson(
           env,
           "webform",
           "/api/webForms/bankConnectionImport",
           accessToken,
-          {
-            bank: { id: Number(bankId) },
-            bankConnectionName: `KontoKlar – ${bank.name}`,
-            // KontoKlar currently imports payment-account transactions only. Requesting SECURITY
-            // would add another provider workflow without any holdings UI or persistence.
-            accountTypes: ["CHECKING"],
-            maxDaysForDownload: 90,
-            skipBalancesDownload: true,
-            skipPositionsDownload: true,
-            loadOwnerData: false,
-          },
+          importRequest,
         );
         const authorizationUrl = requireWebFormUrl(form.url, env);
         const formId = nonEmptyString(form.id);

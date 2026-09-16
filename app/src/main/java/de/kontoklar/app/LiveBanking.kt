@@ -31,8 +31,9 @@ class LiveBankingClient(context: Context, private val baseUrl: String = BuildCon
 
     fun connections(): List<LiveBankConnection> = request("GET", "/v1/connections").getJSONArray("connections").asList(::connectionFromJson)
 
-    fun connect(bankId: String): BankLinkSession {
-        val result = request("POST", "/v1/connections", JSONObject().put("bankId", bankId))
+    fun connect(bankId: String? = null): BankLinkSession {
+        val payload = JSONObject().apply { bankId?.let { put("bankId", it) } }
+        val result = request("POST", "/v1/connections", payload)
         val url = URL(result.getString("authorizationUrl"))
         require(url.protocol == "https" && url.host in setOf("webform-sandbox.finapi.io", "webform-live.finapi.io")) {
             "Der Bankanbieter hat eine nicht erlaubte Freigabe-URL geliefert."

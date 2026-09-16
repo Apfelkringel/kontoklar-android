@@ -50,7 +50,7 @@ fun BankingScreen(
     connections: List<LiveBankConnection>,
     bankingBusy: Boolean,
     bankingMessage: String?,
-    onConnectBank: (BankingInstitution) -> Unit,
+    onConnectBank: (BankingInstitution?) -> Unit,
     onRefreshConnections: () -> Unit,
     onSyncConnection: (LiveBankConnection) -> Unit,
     onDeleteConnection: (LiveBankConnection) -> Unit,
@@ -114,6 +114,11 @@ fun BankingScreen(
                         Text("Noch nicht aktiv: Der sichere Open-Banking-Server und der Anbieterzugang müssen zuerst eingerichtet werden.", color = Muted, fontSize = 12.sp)
                     } else {
                         Text("Freigabe und Datenabruf laufen über finAPI. PIN und TAN gibst du ausschließlich im Bank-/finAPI-Dialog ein. Umsätze werden vom Anbieter abgerufen und danach in KontoKlar lokal gespeichert.", color = Muted, fontSize = 11.sp)
+                        Button(
+                            onClick = { onConnectBank(null) }, enabled = !bankingBusy,
+                            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Forest)
+                        ) { Text("Bank suchen und verbinden") }
                         if (institutions.isEmpty() && connections.isEmpty()) {
                             Text(
                                 if (bankingBusy) "Banken werden geladen …" else "Der Anbieter meldet aktuell keine unterstützte Bank. Prüfe später erneut oder importiere einen Auszug.",
@@ -125,7 +130,7 @@ fun BankingScreen(
                             OutlinedButton(
                                 onClick = { onConnectBank(institution) }, enabled = !bankingBusy,
                                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
-                            ) { Text("${institution.name} verbinden") }
+                            ) { Text("${institution.name} direkt verbinden") }
                         }
                         connections.forEach { connection ->
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

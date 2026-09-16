@@ -307,9 +307,10 @@ private fun KontoKlarApp() {
                         scope.launch {
                             bankingBusy = true
                             runCatching {
-                                val session = withContext(Dispatchers.IO) { liveBanking.connect(institution.id) }
+                                val session = withContext(Dispatchers.IO) { liveBanking.connect(institution?.id) }
                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(session.authorizationUrl)))
-                                "Freigabe bei ${institution.name} geöffnet. Kehre danach hierher zurück – KontoKlar prüft die Verbindung automatisch."
+                                if (institution == null) "Bankauswahl geöffnet. Wähle deine Bank im sicheren Freigabeformular und kehre danach hierher zurück – KontoKlar prüft die Verbindung automatisch."
+                                else "Freigabe bei ${institution.name} geöffnet. Kehre danach hierher zurück – KontoKlar prüft die Verbindung automatisch."
                             }.onSuccess { bankingMessage = it }
                                 .onFailure { bankingMessage = it.message ?: "Bankverbindung konnte nicht gestartet werden." }
                             bankingBusy = false

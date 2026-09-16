@@ -38,6 +38,7 @@ Native Android app prototype built with Kotlin and Jetpack Compose. The app uses
 - Export a limited domestic German XRechnung 3.0.2 UBL XML file with multiple invoice positions via Android's document picker after checking required invoice, addresses, electronic addresses, German VAT-ID, service-date, VAT inputs, and position-total/rounding consistency.
 - Import incoming XRechnung and ZUGFeRD/Factur-X in UBL or CII XML, including extraction of the structured invoice from a ZUGFeRD PDF; review supplier/invoice/gross/VAT data, then save as an expense with the original XML or PDF attached. XML attachments are included in ZIP backups.
 - Import local ISO 20022 CAMT.053 bank statements, deduplicate and store transactions, suggest invoice matches for incoming payments and expense matches for outgoing payments, and persist user-confirmed reconciliation links; marking an invoice paid always requires explicit confirmation. Imported transactions are included in backups and bookkeeping CSV exports.
+- Import C24 and comdirect transaction CSV exports locally on-device (in addition to CAMT.053); bank credentials are never requested or transmitted. Trade Republic cash statements are currently provided as PDF by the bank and need a dedicated PDF adapter before being claimed as supported.
 - Generate a shareable invoice working-PDF populated from the saved sender profile, recipient snapshot, service/invoice/due dates, gross/net/VAT breakdown and IBAN when present. It remains conspicuously marked as a draft and not a final tax invoice.
 - Android's system installer confirms package updates; it requires the one-time "Install unknown apps" permission.
 - Clear distinction between local records and external banking/tax services.
@@ -48,7 +49,7 @@ There is no account/login or cloud sync, live bank/PSD2 connection, automatic ba
 
 ## Publishing an update
 
-Push a version tag such as `v0.37.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
+Push a version tag such as `v0.38.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
 
 ## Build
 

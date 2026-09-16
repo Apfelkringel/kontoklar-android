@@ -155,7 +155,7 @@ private fun KontoKlarApp() {
             runCatching {
                 runCatching { context.contentResolver.takePersistableUriPermission(source, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                 withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(source)?.use(::parseCamt053)
+                    context.contentResolver.openInputStream(source)?.use(::parseBankStatement)
                         ?: error("Der Kontoauszug kann nicht gelesen werden.")
                 }
             }.onSuccess { statement ->
@@ -271,7 +271,7 @@ private fun KontoKlarApp() {
                         .onFailure { toast = it.message ?: "Export konnte nicht erstellt werden." }
                     else toast = "$action – wird eingerichtet"
                 })
-                Page.Banking -> BankingScreen(
+                    Page.Banking -> BankingScreen(
                     transactions = bankTransactions,
                     invoices = invoices,
                     expenses = expenses,

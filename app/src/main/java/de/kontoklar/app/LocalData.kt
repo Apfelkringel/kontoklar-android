@@ -172,7 +172,7 @@ fun List<Product>.upsertProduct(product: Product): List<Product> =
 fun List<Product>.withoutProduct(id: String): List<Product> = filterNot { it.id == id }
 
 class LocalData(context: Context) {
-    private val prefs = context.getSharedPreferences("kontoklar_data_v1", Context.MODE_PRIVATE)
+    private val prefs = SecureLocalPreferences(context)
 
     fun exportSnapshot(): JSONObject = JSONObject()
         .put("schemaVersion", 1)
@@ -213,16 +213,16 @@ class LocalData(context: Context) {
         require(importedProducts.map { it.id }.distinct().size == importedProducts.size) { "Die Sicherung enthält doppelte Produkte." }
         require(importedTaxDeadlines.map { it.id }.distinct().size == importedTaxDeadlines.size) { "Die Sicherung enthält doppelte Steuertermine." }
 
-        check(prefs.edit()
-            .putString("invoices", snapshot.getJSONArray("invoices").toString())
-            .putString("offers", snapshot.getJSONArray("offers").toString())
-            .putString("expenses", snapshot.getJSONArray("expenses").toString())
-            .putString("bank_transactions", (snapshot.optJSONArray("bankTransactions") ?: JSONArray()).toString())
-            .putString("customers", snapshot.getJSONArray("customers").toString())
-            .putString("products", (snapshot.optJSONArray("products") ?: JSONArray()).toString())
-            .putString("tax_deadlines", (snapshot.optJSONArray("taxDeadlines") ?: JSONArray()).toString())
-            .putString("business_profile", businessProfileJson(importedProfile).toString())
-            .commit()) { "Die wiederhergestellten Daten konnten nicht dauerhaft gespeichert werden." }
+        check(prefs.putStrings(mapOf(
+            "invoices" to snapshot.getJSONArray("invoices").toString(),
+            "offers" to snapshot.getJSONArray("offers").toString(),
+            "expenses" to snapshot.getJSONArray("expenses").toString(),
+            "bank_transactions" to (snapshot.optJSONArray("bankTransactions") ?: JSONArray()).toString(),
+            "customers" to snapshot.getJSONArray("customers").toString(),
+            "products" to (snapshot.optJSONArray("products") ?: JSONArray()).toString(),
+            "tax_deadlines" to (snapshot.optJSONArray("taxDeadlines") ?: JSONArray()).toString(),
+            "business_profile" to businessProfileJson(importedProfile).toString()
+        ))) { "Die wiederhergestellten Daten konnten nicht dauerhaft gespeichert werden." }
     }
 
     private fun storedArray(key: String): JSONArray = prefs.getString(key, null)?.let(::JSONArray) ?: JSONArray()
@@ -310,7 +310,7 @@ class LocalData(context: Context) {
     }
 
     fun saveBusinessProfile(profile: BusinessProfile) {
-        prefs.edit().putString("business_profile", businessProfileJson(profile).toString()).apply()
+        prefs.putString("business_profile", businessProfileJson(profile).toString())
     }
 
     private fun businessProfileJson(profile: BusinessProfile): JSONObject = JSONObject()
@@ -350,7 +350,7 @@ class LocalData(context: Context) {
     }
 
     private fun write(key: String, values: List<JSONObject>) {
-        prefs.edit().putString(key, JSONArray(values).toString()).apply()
+        prefs.putString(key, JSONArray(values).toString())
     }
 }
 

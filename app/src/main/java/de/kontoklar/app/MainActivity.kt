@@ -1299,9 +1299,10 @@ private fun ActionDialog(
                     result.merchant?.let { merchant = it }
                     result.date?.let { expenseDate = it }
                     result.amountCents?.let { amount = formatEuro(it) }
-                    scanStatus = if (result.merchant == null && result.date == null && result.amountCents == null)
+                    result.suggestedCategory?.let { category = it }
+                    scanStatus = if (result.merchant == null && result.date == null && result.amountCents == null && result.suggestedCategory == null)
                         "Kein sicherer Vorschlag erkannt. Bitte Angaben manuell ergänzen."
-                    else "Vorschläge übernommen – bitte vor dem Speichern prüfen."
+                    else "Vorschläge für Händler, Datum, Betrag${result.suggestedCategory?.let { " und Kategorie ($it)" }.orEmpty()} übernommen – bitte prüfen."
                 },
                 onError = { scanStatus = "Texterkennung fehlgeschlagen: $it. Du kannst die Angaben manuell erfassen." }
             )
@@ -1439,7 +1440,7 @@ private fun ActionDialog(
                         Icon(Icons.Default.DocumentScanner, null); Spacer(Modifier.width(8.dp)); Text("Fotografieren & Text auslesen")
                     }
                     scanStatus?.let { Text(it, color = if (it.startsWith("Texterkennung fehlgeschlagen")) MaterialTheme.colorScheme.error else Muted, fontSize = 11.sp) }
-                    Text("Texterkennung läuft auf dem Gerät. Händler, Datum und Betrag sind Vorschläge und müssen geprüft werden.", color = Muted, fontSize = 11.sp)
+                    Text("Texterkennung läuft auf dem Gerät. Händler, Datum, Betrag und eine mögliche Kategorie sind unverbindliche, editierbare Vorschläge. Die Kategorie ist keine steuerliche Einstufung.", color = Muted, fontSize = 11.sp)
                 } else {
                     Text("Diese Funktion benötigt noch eine externe Anbieteranbindung. Deine Daten werden bis dahin nicht an Dritte gesendet.", color = Muted, fontSize = 13.sp)
                     OutlinedTextField(note, { note = it }, label = { Text("Notiz (optional)") }, singleLine = true)

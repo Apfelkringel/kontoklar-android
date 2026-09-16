@@ -510,6 +510,7 @@ data class ReceiptScan(
     val merchant: String?,
     val date: String?,
     val amountCents: Long?,
+    val suggestedCategory: String?,
     val text: String
 )
 
@@ -538,5 +539,5 @@ fun parseReceiptText(text: String): ReceiptScan {
             !dateRegex.containsMatchIn(line) && !totalHints.containsMatchIn(line) &&
             !Regex("(?i)rechnung|kassenbon|quittung|beleg|datum|uhrzeit|tel\\.?|www\\.|http").containsMatchIn(line)
     }?.take(80)
-    return ReceiptScan(merchant, date, amount, text)
+    return ReceiptScan(merchant, date, amount, suggestExpenseCategory(merchant, text), text)
 }

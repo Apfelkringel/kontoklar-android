@@ -81,6 +81,7 @@ class ReceiptScanTest {
         assertEquals("Bäckerei Morgenrot", result.merchant)
         assertEquals("2026-09-14", result.date)
         assertEquals(920L, result.amountCents)
+        assertNull(result.suggestedCategory)
     }
 
     @Test fun rejectsImpossibleReceiptDateAndLeavesUnknownFieldsEmpty() {
@@ -94,5 +95,20 @@ class ReceiptScanTest {
         val result = parseReceiptText("Supermarkt Nord\n02/09/26\nZu zahlen: 1.234,56")
         assertEquals("2026-09-02", result.date)
         assertEquals(123456L, result.amountCents)
+    }
+
+    @Test fun receiptScanSuggestsUnambiguousExpenseCategoryFromMerchantOrReceiptText() {
+        val software = parseReceiptText("Adobe Creative Cloud\nJahresabonnement 119,00\nGesamt 119,00")
+        assertEquals("Software", software.suggestedCategory)
+        val travel = parseReceiptText("Deutsche Bahn AG\nFahrkarte Berlin-Hamburg\nGesamt 49,90")
+        assertEquals("Reisekosten", travel.suggestedCategory)
+        val hospitality = parseReceiptText("Café Morgenrot\nCappuccino 3,50\nGesamt 3,50")
+        assertEquals("Bewirtung", hospitality.suggestedCategory)
+    }
+
+    @Test fun categorySuggestionStaysUnknownWhenTextIsAmbiguousOrUnrecognized() {
+        assertNull(suggestExpenseCategory("Taxi Restaurant", "Taxi Restaurant Beleg"))
+        assertNull(suggestExpenseCategory("Bäckerei Morgenrot", "Brötchen 2,50 Gesamt 2,50"))
+        assertNull(suggestExpenseCategory(null, ""))
     }
 }

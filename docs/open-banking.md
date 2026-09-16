@@ -36,6 +36,12 @@ Der Worker sucht C24, comdirect und Trade Republic im finAPI-Bankverzeichnis und
 
 Verbindungen laufen über das gehostete finAPI-Webformular; KontoKlar fragt niemals Bank-PIN oder TAN ab. Die App bietet sowohl direkte Schnellwahl für C24, comdirect und Trade Republic als auch eine allgemeine Banksuche im finAPI-Webformular (Web Form 2.0 wählt dort Bank und Schnittstelle selbst aus). KontoKlar fordert aktuell Zahlungskonten (`CHECKING`) an und überspringt nicht genutzte Salden- und Wertpapierpositionsdownloads, damit nicht unterstützte Kontotypen keine zusätzlichen Schritte im Freigabefluss verursachen. Wertpapierdepots/Bestände werden noch nicht in der App dargestellt. Die App startet Synchronisierungen nur nach deinem Tippen. Ein Anbieter kann trotzdem eine erneute Freigabe/SCA erfordern. Es gibt keine Zahlungsinitiierung und keine stille/unbeaufsichtigte Synchronisierung.
 
+### Funktionsumfang und Vertragsrealität
+
+„Bank verbinden“ deckt nicht automatisch alle Konten bei derselben Bank ab. finAPI empfiehlt, nur die benötigten Kontotypen anzufordern; `CHECKING`, `CREDIT_CARD`, `SAVINGS` und `SECURITY` können unterschiedliche Bankprotokolle und weitere Freigabeschritte auslösen. KontoKlar fordert derzeit absichtlich nur `CHECKING` an. Die App kann daher noch nicht als vollständiger Finanzguru-Ersatz für Kreditkarten, Tagesgeld oder Wertpapierdepots gelten. Finanzguru beschreibt selbst XS2A für Girokonten und FinTS für weitere Kontotypen, einschließlich Depots. Auch eine Bank, die im finAPI-Verzeichnis auftaucht, garantiert nicht, dass der eigene Vertrag genau diese Verbindung und Kontotypen freischaltet.
+
+Ein Sandbox-Zugang dient der Entwicklung und ist kein Live-Bankzugang. finAPI nennt auf der aktuellen Preisseite für Access B2C eine Grundgebühr von 60 €/Monat bis 200 Nutzer, für Access B2X 100 €/Monat, und für „Access für Eigenanwender“ (höchstens 10 eigene Konten) 200 €/Monat; PSD2-Lizenzkosten können für Nicht-Eigenanwender hinzukommen. finAPI weist bei der Bestellung auf eine anfängliche Vertragslaufzeit von 24 Monaten hin. Die Bestellung erfordert geschäftliche Kontaktdaten und eine Identitätsprüfung. Deshalb werden weder ein Produktionsvertrag abgeschlossen noch kostenpflichtige Zugänge oder Live-Credentials ohne separate ausdrückliche Entscheidung eingerichtet. Preise und Vertragsbedingungen vor einer Entscheidung direkt beim Anbieter prüfen.
+
 Vor einer echten Veröffentlichung zusätzlich erforderlich: Anbieterfreigabe und Produktionszugang, tatsächlicher Test mit C24/comdirect/Trade Republic, rechtliche/PSD2-Rollenprüfung, Datenschutzhinweise und Auftragsverarbeitungsvertrag, Lösch-/Widerrufsprozess, Sicherheitsprüfung und Update-Signatur/Release-Prozess. Bis diese Punkte vorliegen, ist die Verbindung eine implementierte, aber nicht produktionsfreigegebene Integration.
 
 ## Datenschutz
@@ -50,3 +56,7 @@ Ein Kontoauszug enthält typischerweise IBAN, Name, Adresse, Salden und detailli
 * [finAPI Bankverbindung nutzerinitiiert aktualisieren (inkl. PSU-Metadaten und SCA)](https://documentation.finapi.io/access/update-a-bank-connection-for-web-form-2-0-customer)
 * [finAPI Import-/Update-Nachverarbeitung und Kontostatus](https://documentation.finapi.io/access/post-processing-of-bank-account-import-update)
 * [finAPI Sandbox- und Live-Umgebungen](https://documentation.finapi.io/webform/web-form-2-0-environments)
+* [finAPI Access: unterstützte Kontotypen und Schnittstellen](https://documentation.finapi.io/access)
+* [finAPI: weitere Kontotypen bei der Web-Form-Verbindung anfordern](https://documentation.finapi.io/access/import-a-new-bank-connection-with-web-form-2-0-rec)
+* [finAPI aktuelle Produktpreise und Vertragsbedingungen](https://www.finapi.io/preise/)
+* [Finanzguru: XS2A für Girokonten und FinTS für weitere Kontotypen](https://hilfe.finanzguru.de/de/articles/1558594)

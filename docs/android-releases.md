@@ -4,7 +4,7 @@ KontoKlar prüft auf ein öffentliches GitHub-Release, lädt die APK in einen pr
 
 ## Release-Signaturschlüssel
 
-Die ersten lokalen Testinstallationen verwendeten den standardmäßigen Android-Debug-Keystore. Die veröffentlichten Releases verwenden stattdessen einen privaten, dedizierten Release-Schlüssel. Das aktuelle Release `v0.38.0` wurde mit diesem Schlüssel signiert; sein Zertifikatsfingerprint stimmt mit dem unten aufgeführten Fingerprint überein. Der private Schlüssel darf weder neu erzeugt noch verloren oder in Git eingecheckt werden.
+Die ersten lokalen Testinstallationen verwendeten den standardmäßigen Android-Debug-Keystore. Die veröffentlichten Releases verwenden stattdessen einen privaten, dedizierten Release-Schlüssel. Das aktuelle veröffentlichte Release `v0.38.0` wurde mit diesem Schlüssel signiert; sein Zertifikatsfingerprint stimmt mit dem unten aufgeführten Fingerprint überein. Das vorbereitete Update `v0.39.0` muss denselben Schlüssel verwenden. Der private Schlüssel darf weder neu erzeugt noch verloren oder in Git eingecheckt werden.
 
 Ein APK, das noch mit dem öffentlichen Debug-Schlüssel installiert wurde, kann Android nicht direkt durch ein mit dem privaten Release-Schlüssel signiertes APK aktualisieren. Vor dem Wechsel einer solchen lokalen Testinstallation bitte in der App ein verschlüsseltes Backup erstellen; die Release-App muss dann frisch installiert und das Backup wiederhergestellt werden. Updates zwischen den mit dem stabilen Release-Schlüssel signierten Releases funktionieren normal.
 

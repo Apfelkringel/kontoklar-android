@@ -83,6 +83,7 @@ private fun KontoKlarApp() {
     var products by remember { mutableStateOf(store.products()) }
     var taxDeadlines by remember { mutableStateOf(store.taxDeadlines()) }
     var recurringPlans by remember { mutableStateOf(store.recurringInvoicePlans()) }
+    var recurringExpensePlans by remember { mutableStateOf(store.recurringExpensePlans()) }
     var profile by remember { mutableStateOf(store.businessProfile()) }
     var selectedInvoice by remember { mutableStateOf<Invoice?>(null) }
     var invoiceToEdit by remember { mutableStateOf<Invoice?>(null) }
@@ -96,6 +97,7 @@ private fun KontoKlarApp() {
     var customersOpen by remember { mutableStateOf(false) }
     var productsOpen by remember { mutableStateOf(false) }
     var recurringInvoicesOpen by remember { mutableStateOf(false) }
+    var recurringExpensesOpen by remember { mutableStateOf(false) }
     var productEditorOpen by remember { mutableStateOf(false) }
     var editingProduct by remember { mutableStateOf(Product(name = "", unitPriceCents = 0)) }
     var productToDelete by remember { mutableStateOf<Product?>(null) }
@@ -260,6 +262,7 @@ private fun KontoKlarApp() {
                     else if (action == "Angebote") offersOpen = true
                     else if (action == "Produkte & Dienstleistungen") productsOpen = true
                     else if (action == "Wiederkehrende Rechnungen") recurringInvoicesOpen = true
+                    else if (action == "Wiederkehrende Ausgaben") recurringExpensesOpen = true
                     else if (action == "Dokumente") documentsOpen = true
                     else if (action == "Mit Buchhalter teilen") runCatching { shareBookkeepingCsv(context, invoices, expenses, bankTransactions) }
                         .onFailure { toast = it.message ?: "Export konnte nicht erstellt werden." }
@@ -390,6 +393,33 @@ private fun KontoKlarApp() {
                 toast = "Wiederholungsvorlage gelöscht"
             }
         )
+        if (recurringExpensesOpen) RecurringExpenseManagerDialog(
+            plans = recurringExpensePlans,
+            onDismiss = { recurringExpensesOpen = false },
+            onAdd = { plan ->
+                recurringExpensePlans = listOf(plan) + recurringExpensePlans
+                store.saveRecurringExpensePlans(recurringExpensePlans)
+                toast = "Wiederkehrende Ausgabe gespeichert"
+            },
+            onGenerate = { plan ->
+                runCatching { store.generateNextRecurringExpense(plan.id) }
+                    .onSuccess { expense ->
+                        expenses = store.expenses()
+                        recurringExpensePlans = store.recurringExpensePlans()
+                        toast = "Ausgabe für ${expense.date} erfasst · nächster Termin ${recurringExpensePlans.firstOrNull { it.id == plan.id }?.nextRunDate.orEmpty()}"
+                    }
+                    .onFailure { toast = it.message ?: "Ausgabe konnte nicht erfasst werden." }
+            },
+            onToggle = { plan ->
+                recurringExpensePlans = recurringExpensePlans.map { if (it.id == plan.id) it.copy(active = !it.active) else it }
+                store.saveRecurringExpensePlans(recurringExpensePlans)
+            },
+            onDelete = { plan ->
+                recurringExpensePlans = recurringExpensePlans.filterNot { it.id == plan.id }
+                store.saveRecurringExpensePlans(recurringExpensePlans)
+                toast = "Ausgabevorlage gelöscht"
+            }
+        )
         if (documentsOpen) DataManagementDialog(
             onDismiss = { documentsOpen = false },
             onExport = { documentsOpen = false; backupPasswordForRestore = false; backupPassword = ""; backupPasswordDialog = true },
@@ -399,7 +429,7 @@ private fun KontoKlarApp() {
             AlertDialog(
                 onDismissRequest = { restoreBackupUri = null },
                 title = { Text("Sicherung wiederherstellen?") },
-                text = { Text("Die Sicherung ersetzt deine lokalen Rechnungen, Angebote, wiederkehrenden Rechnungsvorlagen, Kunden, Ausgaben und das Unternehmensprofil. Verschlüsselte Sicherungen benötigen das Erstellpasswort. Ein angehängter Beleg wird mit übernommen. Erstelle vorher eine aktuelle Sicherung, wenn du vorhandene Daten behalten möchtest.") },
+                text = { Text("Die Sicherung ersetzt deine lokalen Rechnungen, Angebote, wiederkehrenden Rechnungs- und Ausgabevorlagen, Kunden, Ausgaben und das Unternehmensprofil. Verschlüsselte Sicherungen benötigen das Erstellpasswort. Ein angehängter Beleg wird mit übernommen. Erstelle vorher eine aktuelle Sicherung, wenn du vorhandene Daten behalten möchtest.") },
                 confirmButton = {
                     TextButton(onClick = {
                         backupPassword = ""
@@ -895,7 +925,7 @@ private fun SupportDialog(onDismiss: () -> Unit) {
 
 @Composable
 private fun MoreScreen(profile: BusinessProfile, onAction: (String) -> Unit) {
-    val links = listOf("Kontoauszüge & Abgleich" to Icons.Default.AccountBalanceWallet, "Kunden" to Icons.Default.People, "Angebote" to Icons.Default.RequestQuote, "Produkte & Dienstleistungen" to Icons.Default.Inventory2, "Wiederkehrende Rechnungen" to Icons.Default.Repeat, "Dokumente" to Icons.Default.Folder, "Steuerübersicht" to Icons.Default.AutoAwesome, "Mit Buchhalter teilen" to Icons.Default.Share, "Einstellungen" to Icons.Default.Settings, "Hilfe & Support" to Icons.Default.HelpOutline)
+    val links = listOf("Kontoauszüge & Abgleich" to Icons.Default.AccountBalanceWallet, "Kunden" to Icons.Default.People, "Angebote" to Icons.Default.RequestQuote, "Produkte & Dienstleistungen" to Icons.Default.Inventory2, "Wiederkehrende Rechnungen" to Icons.Default.Repeat, "Wiederkehrende Ausgaben" to Icons.Default.Repeat, "Dokumente" to Icons.Default.Folder, "Steuerübersicht" to Icons.Default.AutoAwesome, "Mit Buchhalter teilen" to Icons.Default.Share, "Einstellungen" to Icons.Default.Settings, "Hilfe & Support" to Icons.Default.HelpOutline)
     LazyColumn(contentPadding = PaddingValues(18.dp, 14.dp, 18.dp, 90.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(18.dp)) { Text(profile.businessName.ifBlank { profile.contactName }.ifBlank { "Unternehmensprofil" }, fontWeight = FontWeight.Bold, color = Ink, fontSize = 18.sp); Text(listOf(profile.activity, profile.legalForm, profile.street, listOf(profile.postalCode, profile.city).filter(String::isNotBlank).joinToString(" ")).filter(String::isNotBlank).joinToString(" · ").ifBlank { if (profile.businessName.isBlank() && profile.contactName.isBlank()) "Noch nicht eingerichtet · Daten bleiben lokal" else "Lokale Unternehmensdaten" }, color = Muted, fontSize = 13.sp) } } }
         item { AppUpdateCard() }
@@ -910,7 +940,7 @@ private fun DataManagementDialog(onDismiss: () -> Unit, onExport: () -> Unit, on
         title = { Text("Dokumente & Datensicherung", color = Ink, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Erstelle eine passwortgeschützte Sicherung mit Rechnungen, Angeboten und wiederkehrenden Rechnungsvorlagen, Kunden, Ausgaben, importierten Bankumsätzen, Profilangaben und Belegen. Die Verschlüsselung schützt die Datei auch außerhalb dieses Geräts. Bewahre das Passwort sicher auf – es kann nicht wiederhergestellt werden. Ältere unverschlüsselte ZIP-Sicherungen lassen sich weiterhin importieren.", color = Muted, fontSize = 13.sp)
+                Text("Erstelle eine passwortgeschützte Sicherung mit Rechnungen, Angeboten, wiederkehrenden Rechnungs- und Ausgabevorlagen, Kunden, Ausgaben, importierten Bankumsätzen, Profilangaben und Belegen. Die Verschlüsselung schützt die Datei auch außerhalb dieses Geräts. Bewahre das Passwort sicher auf – es kann nicht wiederhergestellt werden. Ältere unverschlüsselte ZIP-Sicherungen lassen sich weiterhin importieren.", color = Muted, fontSize = 13.sp)
                 Button(onClick = onExport, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Forest)) {
                     Icon(Icons.Default.Backup, null); Spacer(Modifier.width(8.dp)); Text("Sicherung exportieren")
                 }

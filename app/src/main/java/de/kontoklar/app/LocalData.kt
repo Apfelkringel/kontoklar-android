@@ -185,6 +185,7 @@ class LocalData(context: Context) {
         .put("products", storedArray("products"))
         .put("taxDeadlines", storedArray("tax_deadlines"))
         .put("recurringInvoices", storedArray("recurring_invoices"))
+        .put("recurringExpenses", storedArray("recurring_expenses"))
 
     fun restoreSnapshot(snapshot: JSONObject) {
         require(snapshot.optInt("schemaVersion") == 1) { "Diese Sicherungsversion wird nicht unterstützt." }
@@ -196,6 +197,7 @@ class LocalData(context: Context) {
         val importedProducts = decodeArray(snapshot.optJSONArray("products") ?: JSONArray(), ::productFromJson)
         val importedTaxDeadlines = decodeArray(snapshot.optJSONArray("taxDeadlines") ?: JSONArray(), ::taxDeadlineFromJson)
         val importedRecurringPlans = decodeArray(snapshot.optJSONArray("recurringInvoices") ?: JSONArray(), ::recurringInvoicePlanFromJson)
+        val importedRecurringExpenses = decodeArray(snapshot.optJSONArray("recurringExpenses") ?: JSONArray(), ::recurringExpensePlanFromJson)
         val importedProfile = businessProfileFromJson(snapshot.getJSONObject("businessProfile"))
         require(importedInvoices.all { it.amountCents > 0 && it.customer.isNotBlank() && it.description.isNotBlank() && it.paidCents in 0..it.amountCents }) { "Die Sicherung enthält ungültige Rechnungen oder Zahlungsstände." }
         require(importedInvoices.all { it.vatRatePercent == null || it.vatRatePercent in 0..27 }) { "Die Sicherung enthält einen ungültigen Umsatzsteuersatz für eine Rechnung." }
@@ -214,6 +216,12 @@ class LocalData(context: Context) {
                 runCatching { plan.lines.fold(0L) { total, line -> Math.addExact(total, line.amountCents) } == plan.amountCents }.getOrDefault(false) &&
                 (plan.vatRatePercent == null || plan.vatRatePercent in 0..27)
         }) { "Die Sicherung enthält ungültige wiederkehrende Rechnungen." }
+        require(importedRecurringExpenses.all { plan ->
+            plan.id.isNotBlank() && plan.merchant.isNotBlank() && plan.merchant.length <= 200 &&
+                plan.category.isNotBlank() && plan.category.length <= 120 && plan.note.length <= 2000 &&
+                plan.amountCents > 0 && (plan.inputVatCents == null || plan.inputVatCents in 0..plan.amountCents) &&
+                plan.intervalMonths in setOf(1, 3, 12) && plan.anchorDay in 1..31 && validIsoDate(plan.nextRunDate)
+        }) { "Die Sicherung enthält ungültige wiederkehrende Ausgaben." }
         require(importedInvoices.map { it.id }.distinct().size == importedInvoices.size && importedInvoices.all { validIsoDate(it.date) && validIsoDate(it.serviceDate) && validIsoDate(it.dueDate) }) { "Die Sicherung enthält doppelte Rechnungen oder ungültige Rechnungsdaten." }
         require(importedOffers.map { it.id }.distinct().size == importedOffers.size && importedOffers.all { validIsoDate(it.date) && validIsoDate(it.validUntil) }) { "Die Sicherung enthält doppelte Angebote oder ungültige Angebotsdaten." }
         require(importedExpenses.map { it.id }.distinct().size == importedExpenses.size && importedExpenses.all { validIsoDate(it.date) }) { "Die Sicherung enthält doppelte Ausgaben oder ungültige Ausgabedaten." }
@@ -222,6 +230,7 @@ class LocalData(context: Context) {
         require(importedProducts.map { it.id }.distinct().size == importedProducts.size) { "Die Sicherung enthält doppelte Produkte." }
         require(importedTaxDeadlines.map { it.id }.distinct().size == importedTaxDeadlines.size) { "Die Sicherung enthält doppelte Steuertermine." }
         require(importedRecurringPlans.map { it.id }.distinct().size == importedRecurringPlans.size) { "Die Sicherung enthält doppelte wiederkehrende Rechnungen." }
+        require(importedRecurringExpenses.map { it.id }.distinct().size == importedRecurringExpenses.size) { "Die Sicherung enthält doppelte wiederkehrende Ausgaben." }
 
         check(prefs.putStrings(mapOf(
             "invoices" to snapshot.getJSONArray("invoices").toString(),
@@ -232,6 +241,7 @@ class LocalData(context: Context) {
             "products" to (snapshot.optJSONArray("products") ?: JSONArray()).toString(),
             "tax_deadlines" to (snapshot.optJSONArray("taxDeadlines") ?: JSONArray()).toString(),
             "recurring_invoices" to (snapshot.optJSONArray("recurringInvoices") ?: JSONArray()).toString(),
+            "recurring_expenses" to (snapshot.optJSONArray("recurringExpenses") ?: JSONArray()).toString(),
             "business_profile" to businessProfileJson(importedProfile).toString()
         ))) { "Die wiederhergestellten Daten konnten nicht dauerhaft gespeichert werden." }
     }
@@ -316,6 +326,25 @@ class LocalData(context: Context) {
         .put("anchorDay", plan.anchorDay).put("paymentTermsDays", plan.paymentTermsDays)
         .put("vatRatePercent", plan.vatRatePercent ?: JSONObject.NULL).put("active", plan.active)
 
+    private fun recurringExpensePlanFromJson(it: JSONObject) = RecurringExpensePlan(
+        id = it.optString("id", UUID.randomUUID().toString()), merchant = it.optString("merchant"),
+        category = it.optString("category"), amountCents = it.optLong("amountCents"),
+        note = it.optString("note"), inputVatCents = it.takeUnless { json -> json.isNull("inputVatCents") }?.optLong("inputVatCents"),
+        intervalMonths = it.optInt("intervalMonths"), nextRunDate = it.optString("nextRunDate"),
+        anchorDay = it.optInt("anchorDay"), active = it.optBoolean("active", true)
+    )
+
+    private fun recurringExpensePlanToJson(plan: RecurringExpensePlan) = JSONObject()
+        .put("id", plan.id).put("merchant", plan.merchant).put("category", plan.category)
+        .put("amountCents", plan.amountCents).put("note", plan.note)
+        .put("inputVatCents", plan.inputVatCents ?: JSONObject.NULL).put("intervalMonths", plan.intervalMonths)
+        .put("nextRunDate", plan.nextRunDate).put("anchorDay", plan.anchorDay).put("active", plan.active)
+
+    private fun expenseToJson(expense: Expense) = JSONObject()
+        .put("id", expense.id).put("merchant", expense.merchant).put("category", expense.category)
+        .put("amountCents", expense.amountCents).put("date", expense.date).put("note", expense.note)
+        .put("receiptUri", expense.receiptUri).put("inputVatCents", expense.inputVatCents ?: JSONObject.NULL)
+
     private fun invoiceToJson(invoice: Invoice) = JSONObject()
         .put("id", invoice.id).put("number", invoice.number).put("customer", invoice.customer)
         .put("customerId", invoice.customerId).put("customerAddress", invoice.customerAddress)
@@ -340,7 +369,7 @@ class LocalData(context: Context) {
 
     fun saveInvoices(values: List<Invoice>) = write("invoices", values.map(::invoiceToJson))
     fun saveOffers(values: List<Offer>) = write("offers", values.map { JSONObject().put("id", it.id).put("number", it.number).put("customer", it.customer).put("customerId", it.customerId).put("customerAddress", it.customerAddress).put("customerEmail", it.customerEmail).put("description", it.description).put("amountCents", it.amountCents).put("date", it.date).put("validUntil", it.validUntil).put("status", it.status).put("convertedInvoiceId", it.convertedInvoiceId).put("lines", JSONArray().apply { it.lines.forEach { line -> put(JSONObject().put("description", line.description).put("amountCents", line.amountCents)) } }) })
-    fun saveExpenses(values: List<Expense>) = write("expenses", values.map { JSONObject().put("id", it.id).put("merchant", it.merchant).put("category", it.category).put("amountCents", it.amountCents).put("date", it.date).put("note", it.note).put("receiptUri", it.receiptUri).put("inputVatCents", it.inputVatCents ?: JSONObject.NULL) })
+    fun saveExpenses(values: List<Expense>) = write("expenses", values.map(::expenseToJson))
     fun saveBankTransactions(values: List<BankTransaction>) = write("bank_transactions", values.map { JSONObject().put("id", it.id).put("accountIban", it.accountIban).put("date", it.date).put("counterparty", it.counterparty).put("description", it.description).put("amountCents", it.amountCents).put("reference", it.reference).put("matchedInvoiceId", it.matchedInvoiceId).put("matchedExpenseId", it.matchedExpenseId) })
     fun customers(): List<Customer> = read("customers") { Customer(id = it.optString("id", UUID.randomUUID().toString()), name = it.optString("name"), email = it.optString("email"), street = it.optString("street"), postalCode = it.optString("postalCode"), city = it.optString("city"), taxNumber = it.optString("taxNumber")) }
     fun saveCustomers(values: List<Customer>) = write("customers", values.map { JSONObject().put("id", it.id).put("name", it.name).put("email", it.email).put("street", it.street).put("postalCode", it.postalCode).put("city", it.city).put("taxNumber", it.taxNumber) })
@@ -350,6 +379,24 @@ class LocalData(context: Context) {
     fun saveTaxDeadlines(values: List<TaxDeadline>) = write("tax_deadlines", values.map { JSONObject().put("id", it.id).put("title", it.title).put("dueDate", it.dueDate).put("note", it.note).put("completed", it.completed) })
     fun recurringInvoicePlans(): List<RecurringInvoicePlan> = read("recurring_invoices", ::recurringInvoicePlanFromJson)
     fun saveRecurringInvoicePlans(values: List<RecurringInvoicePlan>) = write("recurring_invoices", values.map(::recurringInvoicePlanToJson))
+    fun recurringExpensePlans(): List<RecurringExpensePlan> = read("recurring_expenses", ::recurringExpensePlanFromJson)
+    fun saveRecurringExpensePlans(values: List<RecurringExpensePlan>) = write("recurring_expenses", values.map(::recurringExpensePlanToJson))
+
+    fun generateNextRecurringExpense(planId: String, today: LocalDate = LocalDate.now()): Expense {
+        val currentPlans = recurringExpensePlans()
+        val plan = currentPlans.firstOrNull { it.id == planId } ?: error("Die Ausgabevorlage ist nicht mehr vorhanden.")
+        require(plan.active) { "Diese Ausgabevorlage ist pausiert." }
+        val scheduledDate = LocalDate.parse(plan.nextRunDate)
+        require(!scheduledDate.isAfter(today)) { "Diese wiederkehrende Ausgabe ist noch nicht fällig." }
+        val expense = recurringExpenseFromPlan(plan, scheduledDate)
+        val updatedPlans = currentPlans.map { if (it.id == planId) it.copy(nextRunDate = nextRecurringExpenseDate(plan).toString()) else it }
+        val updatedExpenses = expenses().upsertExpense(expense)
+        check(prefs.putStrings(mapOf(
+            "expenses" to JSONArray(updatedExpenses.map(::expenseToJson)).toString(),
+            "recurring_expenses" to JSONArray(updatedPlans.map(::recurringExpensePlanToJson)).toString()
+        ))) { "Ausgabe und Folgetermin konnten nicht dauerhaft gespeichert werden." }
+        return expense
+    }
 
     fun generateNextRecurringInvoice(planId: String, today: LocalDate = LocalDate.now()): Invoice {
         val currentPlans = recurringInvoicePlans()

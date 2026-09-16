@@ -64,4 +64,17 @@ class TaxReportTest {
         assertEquals(10_000L, report.netInvoiceCentsWithVatSnapshot)
         assertEquals(1, report.invoicesWithoutVatRateCount)
     }
+
+    @Test fun sumsSavedTaxFromEachInvoiceLine() {
+        val invoice = Invoice(
+            number = "RE-3", customer = "A", description = "Beratung · Implementierung", amountCents = 35_700,
+            date = "2026-06-01", status = "Versendet", vatRatePercent = 19,
+            lines = listOf(InvoiceLine("Beratung", 11_900), InvoiceLine("Implementierung", 23_800))
+        )
+
+        val report = taxYearReport(2026, listOf(invoice), emptyList())
+
+        assertEquals(5_700L, report.documentedOutputVatCents)
+        assertEquals(30_000L, report.netInvoiceCentsWithVatSnapshot)
+    }
 }

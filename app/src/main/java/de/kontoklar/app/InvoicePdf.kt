@@ -14,15 +14,16 @@ fun shareInvoiceDraft(context: Context, invoice: Invoice, profile: BusinessProfi
     val file = File(directory, "${invoice.number.ifBlank { invoice.id }}-ENTWURF.pdf")
     val document = PdfDocument()
     try {
-        val page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
-        val canvas = page.canvas
+        var pageNumber = 1
+        var page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNumber).create())
+        var canvas = page.canvas
         val normal = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.rgb(35, 48, 43); textSize = 13f }
         val muted = Paint(normal).apply { color = android.graphics.Color.rgb(112, 124, 118); textSize = 10f }
         val title = Paint(normal).apply { typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD); textSize = 22f }
         val heading = Paint(normal).apply { typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD); textSize = 15f }
         val green = Paint(heading).apply { color = android.graphics.Color.rgb(23, 107, 82) }
         val vatRatePercent = invoice.vatRatePercent ?: profile.vatRatePercent
-        val amounts = invoiceAmountBreakdown(invoice.amountCents, vatRatePercent)
+        val amounts = invoiceTaxBreakdown(invoice, vatRatePercent)
         canvas.drawText(profile.businessName.ifBlank { "KontoKlar" }.take(45), 42f, 54f, green)
         canvas.drawText("RECHNUNGSENTWURF", 42f, 105f, title)
         canvas.drawText(invoice.number.ifBlank { "Rechnungsnummer nicht vergeben" }, 42f, 128f, muted)
@@ -50,19 +51,37 @@ fun shareInvoiceDraft(context: Context, invoice: Invoice, profile: BusinessProfi
         canvas.drawText("Leistungsdatum: ${invoice.serviceDate}", 315f, maxOf(recipientY + 29f, 319f), normal)
         canvas.drawText("Fällig am: ${invoice.dueDate}", 315f, maxOf(recipientY + 48f, 338f), normal)
 
-        val tableTop = maxOf(sellerY, recipientY + 68f, 365f) + 12f
-        canvas.drawLine(42f, tableTop, 553f, tableTop, muted)
-        canvas.drawText("Leistung / Beschreibung", 42f, tableTop + 25f, heading)
-        canvas.drawText("Brutto", 480f, tableTop + 25f, heading)
-        var y = tableTop + 53f
-        wrap(invoice.description, normal, 405f).take(5).forEach { line ->
-            canvas.drawText(line, 42f, y, normal)
-            y += 19f
+        fun drawTableHeader(top: Float) {
+            canvas.drawLine(42f, top, 553f, top, muted)
+            canvas.drawText("Leistung / Beschreibung", 42f, top + 25f, heading)
+            canvas.drawText("Brutto", 480f, top + 25f, heading)
         }
-        canvas.drawText(formatEuro(amounts.grossCents), 480f, tableTop + 53f, normal)
-        y += 15f
-        canvas.drawLine(42f, y, 553f, y, muted)
-        y += 23f
+        fun nextPage(): Float {
+            document.finishPage(page)
+            pageNumber += 1
+            page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNumber).create())
+            canvas = page.canvas
+            canvas.drawText("RECHNUNGSENTWURF · FORTSETZUNG", 42f, 54f, heading)
+            canvas.drawText(invoice.number, 42f, 74f, muted)
+            drawTableHeader(92f)
+            return 145f
+        }
+        val tableTop = maxOf(sellerY, recipientY + 68f, 365f) + 12f
+        drawTableHeader(tableTop)
+        var y = tableTop + 53f
+        invoiceLines(invoice).forEach { lineItem ->
+            val descriptionLines = wrap(lineItem.description, normal, 405f).ifEmpty { listOf("") }
+            val lineHeight = maxOf(22f, descriptionLines.size * 19f)
+            if (y + lineHeight > 725f) y = nextPage()
+            descriptionLines.forEachIndexed { index, descriptionLine ->
+                canvas.drawText(descriptionLine, 42f, y + index * 19f, normal)
+            }
+            canvas.drawText(formatEuro(lineItem.amountCents), 480f, y, normal)
+            y += lineHeight + 10f
+            canvas.drawLine(42f, y - 5f, 553f, y - 5f, muted)
+        }
+        if (y + 125f > 725f) y = nextPage()
+        y += 8f
         canvas.drawText("Nettobetrag", 370f, y, normal); canvas.drawText(formatEuro(amounts.netCents), 480f, y, normal)
         y += 19f
         canvas.drawText("Umsatzsteuer ($vatRatePercent %)", 370f, y, normal); canvas.drawText(formatEuro(amounts.vatCents), 480f, y, normal)
@@ -75,7 +94,7 @@ fun shareInvoiceDraft(context: Context, invoice: Invoice, profile: BusinessProfi
             if (profile.businessName.isNotBlank()) canvas.drawText("Empfänger: ${profile.businessName.take(55)}", 42f, y + 37f, normal)
         }
         canvas.drawText(if (invoice.vatRatePercent == null) "Altentwurf: aktueller Profilsatz verwendet – Steuersatz prüfen." else "Entwurf: Angaben prüfen und vor Versand ergänzen. Nicht als fertige Rechnung verwenden.", 42f, 785f, muted)
-        canvas.drawText("KontoKlar · Arbeitsdokument", 42f, 805f, muted)
+        canvas.drawText("KontoKlar · Arbeitsdokument · Seite $pageNumber", 42f, 805f, muted)
         document.finishPage(page)
         FileOutputStream(file).use(document::writeTo)
     } finally {

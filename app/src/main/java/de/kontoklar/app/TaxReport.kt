@@ -39,7 +39,7 @@ fun taxYearReport(
     val expenseTotal = yearExpenses.sumOf { it.amountCents }
     val expensesWithVat = yearExpenses.filter { it.inputVatCents != null }
     val invoiceAmountsWithVat = issuedInvoices.mapNotNull { invoice ->
-        invoice.vatRatePercent?.let { invoiceAmountBreakdown(invoice.amountCents, it) }
+        invoice.vatRatePercent?.let { invoiceTaxBreakdown(invoice, it) }
     }
     return TaxYearReport(
         year = year,

@@ -67,6 +67,7 @@ private enum class Page(val title: String, val icon: ImageVector) {
 }
 
 private data class Entry(val title: String, val subtitle: String, val amount: String, val icon: ImageVector, val tint: Color)
+private data class InvoiceLineInput(val description: String, val amount: String)
 
 @Composable
 private fun KontoKlarApp() {
@@ -857,10 +858,10 @@ private fun InvoiceDetailsDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(invoice.customer, color = Ink, fontWeight = FontWeight.SemiBold)
-                Text(invoice.description, color = Muted)
+                invoiceLines(invoice).forEachIndexed { index, line -> Text("${index + 1}. ${line.description} · ${formatEuro(line.amountCents)}", color = Muted) }
                 Text("Betrag: ${formatEuro(invoice.amountCents)}", color = Ink)
                 invoice.vatRatePercent?.let { rate ->
-                    val amounts = invoiceAmountBreakdown(invoice.amountCents, rate)
+                    val amounts = invoiceTaxBreakdown(invoice, rate)
                     Text("USt.-Satz bei Erstellung: $rate % · Netto ${formatEuro(amounts.netCents)} · USt. ${formatEuro(amounts.vatCents)}", color = Muted, fontSize = 12.sp)
                 } ?: Text("Kein Steuersatz-Snapshot (Altbestand)", color = Muted, fontSize = 12.sp)
                 Text("Datum: ${invoice.date} · fällig: ${invoice.dueDate}", color = Muted, fontSize = 12.sp)
@@ -870,7 +871,7 @@ private fun InvoiceDetailsDialog(
                 OutlinedButton(onClick = onExportXml, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Code, null); Spacer(Modifier.width(8.dp)); Text("XRechnung-XML speichern")
                 }
-                Text(if (xmlErrors.isEmpty()) "Ein-Zeilen-Rechnung · deutsches Inland · Regelsteuersatz" else "Voraussetzungen: ${xmlErrors.joinToString(" ")}", color = Muted, fontSize = 11.sp)
+                Text(if (xmlErrors.isEmpty()) "${invoiceLines(invoice).size} Position(en) · deutsches Inland · Regelsteuersatz" else "Voraussetzungen: ${xmlErrors.joinToString(" ")}", color = Muted, fontSize = 11.sp)
                 OutlinedButton(onClick = onSharePdf, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.PictureAsPdf, null); Spacer(Modifier.width(8.dp)); Text("Entwurfs-PDF teilen")
                 }
@@ -949,7 +950,12 @@ private fun ActionDialog(
     var selectedCustomer by remember(title, existingInvoice?.id) { mutableStateOf(customers.firstOrNull { it.id == existingInvoice?.customerId }) }
     var customerMenuExpanded by remember { mutableStateOf(false) }
     var productMenuExpanded by remember { mutableStateOf(false) }
-    var description by remember(title, existingInvoice?.id) { mutableStateOf(existingInvoice?.description.orEmpty()) }
+    val invoiceLineInputs = remember(title, existingInvoice?.id) {
+        mutableStateListOf<InvoiceLineInput>().apply {
+            addAll(existingInvoice?.let(::invoiceLines)?.map { InvoiceLineInput(it.description, formatEuro(it.amountCents)) }
+                ?: listOf(InvoiceLineInput("", "")))
+        }
+    }
     var amount by remember(title, existingExpense?.id, existingInvoice?.id) { mutableStateOf((existingInvoice?.amountCents ?: existingExpense?.amountCents)?.let(::formatEuro).orEmpty()) }
     var inputVat by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.inputVatCents?.let(::formatEuro).orEmpty()) }
     var category by remember(title, existingExpense?.id) { mutableStateOf(existingExpense?.category ?: "Sonstiges") }
@@ -1072,8 +1078,9 @@ private fun ActionDialog(
                                 DropdownMenuItem(
                                     text = { Column { Text(product.name); Text(formatEuro(product.unitPriceCents), color = Muted, fontSize = 11.sp) } },
                                     onClick = {
-                                        description = product.description.ifBlank { product.name }
-                                        amount = formatEuro(product.unitPriceCents)
+                                        val line = InvoiceLineInput(product.description.ifBlank { product.name }, formatEuro(product.unitPriceCents))
+                                        if (invoiceLineInputs.size == 1 && invoiceLineInputs[0].description.isBlank() && invoiceLineInputs[0].amount.isBlank()) invoiceLineInputs[0] = line
+                                        else if (invoiceLineInputs.size < 20) invoiceLineInputs.add(line)
                                         productMenuExpanded = false
                                         error = null
                                     }
@@ -1081,8 +1088,22 @@ private fun ActionDialog(
                             }
                         }
                     }
-                    OutlinedTextField(description, { description = it }, label = { Text("Leistung / Beschreibung") }, singleLine = true)
-                    OutlinedTextField(amount, { amount = it; error = null }, label = { Text("Betrag inkl. USt. (€)") }, singleLine = true)
+                    Text("Rechnungspositionen · Bruttobetrag je Position", color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    invoiceLineInputs.forEachIndexed { index, line ->
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                OutlinedTextField(line.description, { value -> invoiceLineInputs[index] = line.copy(description = value); error = null }, label = { Text("Position ${index + 1} · Leistung") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(line.amount, { value -> invoiceLineInputs[index] = line.copy(amount = value); error = null }, label = { Text("Betrag inkl. USt. (€)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                            }
+                            if (invoiceLineInputs.size > 1) IconButton(onClick = { invoiceLineInputs.removeAt(index); error = null }) { Icon(Icons.Default.DeleteOutline, "Position entfernen", tint = Muted) }
+                        }
+                    }
+                    OutlinedButton(onClick = {
+                        if (invoiceLineInputs.size < 20) invoiceLineInputs.add(InvoiceLineInput("", ""))
+                        error = null
+                    }, modifier = Modifier.fillMaxWidth(), enabled = invoiceLineInputs.size < 20) {
+                        Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("Position hinzufügen (${invoiceLineInputs.size}/20)")
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(invoiceDate, { invoiceDate = it; error = null }, label = { Text("Rechnungsdatum") }, modifier = Modifier.weight(1f), singleLine = true)
                         OutlinedTextField(invoiceDueDate, { invoiceDueDate = it; error = null }, label = { Text("Fällig am") }, modifier = Modifier.weight(1f), singleLine = true)
@@ -1131,27 +1152,33 @@ private fun ActionDialog(
         confirmButton = {
             TextButton(onClick = {
                 val cents = parseEuroCents(amount)
+                val expenseTotalCents = cents ?: 0L
                 val parsedInputVat = parseOptionalEuroCents(inputVat)
+                val invoiceLinesToSave = invoiceLineInputs.map { line -> InvoiceLine(line.description.trim(), parseEuroCents(line.amount) ?: 0L) }
+                val invoiceTotal = runCatching { invoiceLinesToSave.fold(0L) { total, line -> Math.addExact(total, line.amountCents) } }.getOrNull()
                 when {
                     isProfile && invoicePrefix.isBlank() -> error = "Bitte gib ein Rechnungsnummer-Präfix an."
                     isProfile && (paymentTermsDays.toIntOrNull() !in 1..90 || vatRatePercent.toIntOrNull() !in 0..27) -> error = "Zahlungsziel: 1–90 Tage; USt.-Satz: 0–27 %."
                     isProfile -> onSaveProfile(BusinessProfile(businessName.trim(), street.trim(), postalCode.trim(), city.trim(), taxNumber.trim(), vatId.trim(), invoicePrefix.trim(), paymentTermsDays.toInt(), vatRatePercent.toInt(), businessEmail.trim(), contactName.trim(), contactPhone.trim(), businessIban.trim()))
                     isInvoice && customer.isBlank() -> error = "Bitte gib einen Kunden an."
-                    isInvoice && description.isBlank() -> error = "Bitte beschreibe die Leistung."
+                    isInvoice && invoiceLinesToSave.any { it.description.isBlank() } -> error = "Bitte beschreibe jede Rechnungsposition."
+                    isInvoice && invoiceLinesToSave.any { it.amountCents <= 0 } -> error = "Bitte gib für jede Position einen gültigen positiven Betrag an."
+                    isInvoice && (invoiceTotal == null || invoiceTotal <= 0) -> error = "Die Summe der Rechnungspositionen muss positiv und gültig sein."
                     isInvoice && (runCatching { LocalDate.parse(invoiceDate) }.isFailure || runCatching { LocalDate.parse(serviceDate) }.isFailure || runCatching { LocalDate.parse(invoiceDueDate) }.isFailure) -> error = "Bitte gib Rechnungs-, Leistungs- und Fälligkeitsdatum als JJJJ-MM-TT an."
                     isExpense && merchant.isBlank() -> error = "Bitte gib einen Händler an."
                     isExpense && runCatching { LocalDate.parse(expenseDate) }.isFailure -> error = "Bitte gib ein Datum im Format JJJJ-MM-TT an."
                     isExpense && inputVat.isNotBlank() && parsedInputVat == null -> error = "Bitte gib eine gültige Vorsteuer zwischen 0,00 € und dem Bruttobetrag an."
-                    cents == null -> error = "Bitte gib einen gültigen positiven Betrag an (z. B. 125,50)."
-                    isExpense && parsedInputVat != null && parsedInputVat > cents -> error = "Die Vorsteuer darf nicht höher als der Bruttobetrag sein."
+                    !isInvoice && cents == null -> error = "Bitte gib einen gültigen positiven Betrag an (z. B. 125,50)."
+                    isExpense && parsedInputVat != null && parsedInputVat > expenseTotalCents -> error = "Die Vorsteuer darf nicht höher als der Bruttobetrag sein."
                     isInvoice -> onCreateInvoice(
                         (existingInvoice ?: Invoice(customer = "", description = "", amountCents = 0)).copy(
                             customer = customer.trim(),
                             customerId = selectedCustomer?.id ?: existingInvoice?.takeIf { it.customer == customer.trim() }?.customerId,
                             customerAddress = selectedCustomer?.postalAddress ?: existingInvoice?.takeIf { it.customer == customer.trim() }?.customerAddress.orEmpty(),
                             customerEmail = selectedCustomer?.email ?: existingInvoice?.takeIf { it.customer == customer.trim() }?.customerEmail.orEmpty(),
-                            description = description.trim(),
-                            amountCents = cents,
+                            description = invoiceLinesToSave.joinToString(" · ") { it.description },
+                            amountCents = invoiceTotal!!,
+                            lines = invoiceLinesToSave,
                             date = invoiceDate,
                             serviceDate = serviceDate,
                             dueDate = invoiceDueDate,
@@ -1159,8 +1186,8 @@ private fun ActionDialog(
                         )
                     )
                     isExpense -> onCreateExpense(
-                        existingExpense?.copy(merchant = merchant.trim(), category = category, amountCents = cents, date = expenseDate, note = note.trim(), receiptUri = receiptUri, inputVatCents = parsedInputVat)
-                            ?: Expense(merchant = merchant.trim(), category = category, amountCents = cents, date = expenseDate, note = note.trim(), receiptUri = receiptUri, inputVatCents = parsedInputVat)
+                        existingExpense?.copy(merchant = merchant.trim(), category = category, amountCents = expenseTotalCents, date = expenseDate, note = note.trim(), receiptUri = receiptUri, inputVatCents = parsedInputVat)
+                            ?: Expense(merchant = merchant.trim(), category = category, amountCents = expenseTotalCents, date = expenseDate, note = note.trim(), receiptUri = receiptUri, inputVatCents = parsedInputVat)
                     )
                     else -> onSave("$title geöffnet")
                 }

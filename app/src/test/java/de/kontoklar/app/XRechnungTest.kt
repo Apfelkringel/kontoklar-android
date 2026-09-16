@@ -54,4 +54,33 @@ class XRechnungTest {
         assertTrue(xml.contains("<cbc:TaxableAmount currencyID=\"EUR\">100.00</cbc:TaxableAmount>"))
         assertTrue(xml.contains("<cbc:TaxAmount currencyID=\"EUR\">7.00</cbc:TaxAmount>"))
     }
+
+    @Test fun exportsMultiplePositionsAndSumsRoundedAmountsPerPosition() {
+        val multiLineInvoice = invoice.copy(
+            description = "Beratung · Implementierung",
+            amountCents = 35_700,
+            lines = listOf(InvoiceLine("Beratung & Analyse", 11_900), InvoiceLine("Implementierung", 23_800))
+        )
+        val xml = XRechnung.create(multiLineInvoice, profile)
+        val document = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
+            .newDocumentBuilder().parse(ByteArrayInputStream(xml.toByteArray(Charsets.UTF_8)))
+        val lines = document.getElementsByTagNameNS("urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2", "InvoiceLine")
+
+        assertEquals(2, lines.length)
+        assertTrue(xml.contains("<cbc:Name>Beratung &amp; Analyse</cbc:Name>"))
+        assertTrue(xml.contains("<cbc:Name>Implementierung</cbc:Name>"))
+        assertTrue(xml.contains("<cbc:LineExtensionAmount currencyID=\"EUR\">300.00</cbc:LineExtensionAmount>"))
+        assertTrue(xml.contains("<cbc:TaxAmount currencyID=\"EUR\">57.00</cbc:TaxAmount>"))
+        assertTrue(xml.contains("<cbc:TaxInclusiveAmount currencyID=\"EUR\">357.00</cbc:TaxInclusiveAmount>"))
+    }
+
+    @Test fun rejectsLineAmountsThatDoNotMatchInvoiceTotal() {
+        val inconsistent = invoice.copy(lines = listOf(InvoiceLine("Beratung", 10_000)))
+        assertTrue(XRechnung.validationErrors(inconsistent, profile).any { it.contains("Summe stimmt nicht") })
+    }
+
+    @Test fun rejectsLineRoundingThatCannotReconcileToInvoiceVatTotal() {
+        val oneCentLines = invoice.copy(amountCents = 10, lines = List(10) { InvoiceLine("Kleinbetrag ${it + 1}", 1) })
+        assertTrue(XRechnung.validationErrors(oneCentLines, profile).any { it.contains("Rundung") })
+    }
 }

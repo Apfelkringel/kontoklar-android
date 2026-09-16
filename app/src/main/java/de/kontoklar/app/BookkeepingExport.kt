@@ -41,9 +41,9 @@ fun shareBookkeepingCsv(context: Context, invoices: List<Invoice>, expenses: Lis
 }
 
 internal fun invoiceCsvFields(invoice: Invoice): List<String> {
-    val amounts = invoice.vatRatePercent?.let { invoiceAmountBreakdown(invoice.amountCents, it) }
+    val amounts = invoice.vatRatePercent?.let { invoiceTaxBreakdown(invoice, it) }
     return listOf(
-        "Rechnung", invoice.number, invoice.customer, invoice.description, invoice.date, invoice.dueDate,
+        "Rechnung", invoice.number, invoice.customer, invoiceLines(invoice).joinToString(" | ") { it.description }, invoice.date, invoice.dueDate,
         centsAsGermanDecimal(invoice.amountCents), invoice.status, "",
         amounts?.netCents?.let(::centsAsGermanDecimal).orEmpty(), amounts?.vatCents?.let(::centsAsGermanDecimal).orEmpty()
     )

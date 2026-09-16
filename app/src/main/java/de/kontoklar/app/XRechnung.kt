@@ -1,6 +1,6 @@
 package de.kontoklar.app
 
-/** Export of the app's currently supported, single-line German domestic invoice case. */
+/** Export of the app's currently supported German domestic invoice case. */
 object XRechnung {
     fun validationErrors(invoice: Invoice, profile: BusinessProfile): List<String> = buildList {
         if (invoice.number.isBlank()) add("Rechnungsnummer fehlt.")
@@ -9,7 +9,8 @@ object XRechnung {
         if (runCatching { java.time.LocalDate.parse(invoice.dueDate) }.isFailure) add("Fälligkeitsdatum ist ungültig.")
         if (invoice.customer.isBlank()) add("Kundenname fehlt.")
         if (invoice.customerAddress.lineSequence().count(String::isNotBlank) < 2) add("Kundenanschrift mit Straße sowie PLZ/Ort fehlt.")
-        if (invoice.description.isBlank()) add("Leistungsbeschreibung fehlt.")
+        if (invoiceLines(invoice).any { it.description.isBlank() }) add("Leistungsbeschreibung fehlt.")
+        if (invoice.lines.isNotEmpty() && (invoice.lines.size > 20 || invoice.lines.any { it.amountCents <= 0 } || runCatching { invoice.lines.fold(0L) { total, line -> Math.addExact(total, line.amountCents) } != invoice.amountCents }.getOrDefault(true))) add("Rechnungspositionen sind ungültig oder ihre Summe stimmt nicht.")
         if (invoice.amountCents <= 0) add("Rechnungsbetrag muss positiv sein.")
         if (profile.businessName.isBlank()) add("Name des Rechnungsausstellers fehlt.")
         if (profile.street.isBlank() || profile.postalCode.isBlank() || profile.city.isBlank()) add("Vollständige Anschrift des Rechnungsausstellers fehlt.")
@@ -21,6 +22,7 @@ object XRechnung {
         if (!validGermanIban(profile.iban)) add("Eine gültige deutsche IBAN für Zahlungsanweisungen fehlt.")
         val invoiceVatRate = invoice.vatRatePercent ?: profile.vatRatePercent
         if (invoiceVatRate !in 1..27) add("Für diesen Export muss ein Umsatzsteuersatz von 1–27 % auf der Rechnung hinterlegt sein; steuerfreie Sonderfälle werden noch nicht unterstützt.")
+        if (invoice.lines.isNotEmpty() && invoiceVatRate in 1..27 && !invoiceVatRoundingIsConsistent(invoice, invoiceVatRate)) add("Die Umsatzsteuer-Rundung der Positionen passt nicht zur Rechnungssumme. Bitte prüfe die Cent-Beträge, bevor du eine XRechnung erstellst.")
     }
 
     fun create(invoice: Invoice, profile: BusinessProfile): String {
@@ -31,13 +33,17 @@ object XRechnung {
         val postal = address.last().split(Regex("\\s+"), limit = 2)
         require(postal.size == 2) { "Kundenanschrift muss in der zweiten Zeile PLZ und Ort enthalten." }
         val invoiceVatRate = invoice.vatRatePercent ?: profile.vatRatePercent
-        val amounts = invoiceAmountBreakdown(invoice.amountCents, invoiceVatRate)
+        val amounts = invoiceTaxBreakdown(invoice, invoiceVatRate)
         val net = amounts.netCents
         val tax = amounts.vatCents
         fun money(cents: Long) = "%d.%02d".format(java.util.Locale.US, cents / 100, cents % 100)
         fun x(value: String) = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&apos;")
         fun tag(name: String, value: String) = "<$name>${x(value)}</$name>"
         fun endpoint(value: String) = "<cbc:EndpointID schemeID=\"EM\">${x(value)}</cbc:EndpointID>"
+        val lineXml = invoiceLines(invoice).mapIndexed { index, line ->
+            val lineAmounts = invoiceAmountBreakdown(line.amountCents, invoiceVatRate)
+            """<cac:InvoiceLine><cbc:ID>${index + 1}</cbc:ID><cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity><cbc:LineExtensionAmount currencyID="EUR">${money(lineAmounts.netCents)}</cbc:LineExtensionAmount><cac:InvoicePeriod>${tag("cbc:StartDate", invoice.serviceDate)}${tag("cbc:EndDate", invoice.serviceDate)}</cac:InvoicePeriod><cac:Item>${tag("cbc:Name", line.description)}<cac:ClassifiedTaxCategory>${tag("cbc:ID", "S")}${tag("cbc:Percent", invoiceVatRate.toString())}<cac:TaxScheme>${tag("cbc:ID", "VAT")}</cac:TaxScheme></cac:ClassifiedTaxCategory></cac:Item><cac:Price><cbc:PriceAmount currencyID="EUR">${money(lineAmounts.netCents)}</cbc:PriceAmount></cac:Price></cac:InvoiceLine>"""
+        }.joinToString("\n")
         fun addressXml(streetValue: String, postalValue: String, cityValue: String) = """
             <cac:PostalAddress>${tag("cbc:StreetName", streetValue)}${tag("cbc:CityName", cityValue)}${tag("cbc:PostalZone", postalValue)}<cac:Country>${tag("cbc:IdentificationCode", "DE")}</cac:Country></cac:PostalAddress>
         """.trimIndent()
@@ -62,7 +68,7 @@ ${addressXml(street, postal[0], postal[1])}<cac:PartyLegalEntity>${tag("cbc:Regi
 <cac:PaymentTerms>${tag("cbc:Note", "Zahlbar bis ${invoice.dueDate}.")}</cac:PaymentTerms>
 <cac:TaxTotal><cbc:TaxAmount currencyID="EUR">${money(tax)}</cbc:TaxAmount><cac:TaxSubtotal><cbc:TaxableAmount currencyID="EUR">${money(net)}</cbc:TaxableAmount><cbc:TaxAmount currencyID="EUR">${money(tax)}</cbc:TaxAmount><cac:TaxCategory>${tag("cbc:ID", "S")}${tag("cbc:Percent", invoiceVatRate.toString())}<cac:TaxScheme>${tag("cbc:ID", "VAT")}</cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal></cac:TaxTotal>
 <cac:LegalMonetaryTotal><cbc:LineExtensionAmount currencyID="EUR">${money(net)}</cbc:LineExtensionAmount><cbc:TaxExclusiveAmount currencyID="EUR">${money(net)}</cbc:TaxExclusiveAmount><cbc:TaxInclusiveAmount currencyID="EUR">${money(invoice.amountCents)}</cbc:TaxInclusiveAmount><cbc:PayableAmount currencyID="EUR">${money(invoice.amountCents)}</cbc:PayableAmount></cac:LegalMonetaryTotal>
-<cac:InvoiceLine><cbc:ID>1</cbc:ID><cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity><cbc:LineExtensionAmount currencyID="EUR">${money(net)}</cbc:LineExtensionAmount><cac:InvoicePeriod>${tag("cbc:StartDate", invoice.serviceDate)}${tag("cbc:EndDate", invoice.serviceDate)}</cac:InvoicePeriod><cac:Item>${tag("cbc:Name", invoice.description)}<cac:ClassifiedTaxCategory>${tag("cbc:ID", "S")}${tag("cbc:Percent", invoiceVatRate.toString())}<cac:TaxScheme>${tag("cbc:ID", "VAT")}</cac:TaxScheme></cac:ClassifiedTaxCategory></cac:Item><cac:Price><cbc:PriceAmount currencyID="EUR">${money(net)}</cbc:PriceAmount></cac:Price></cac:InvoiceLine>
+$lineXml
 </ubl:Invoice>""".trimIndent()
     }
 }

@@ -14,8 +14,9 @@ fun shareOfferDraft(context: Context, offer: Offer) {
     val file = File(directory, "${offer.number.ifBlank { offer.id }}-ANGEBOTSENTWURF.pdf")
     val document = PdfDocument()
     try {
-        val page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
-        val canvas = page.canvas
+        var pageNumber = 1
+        var page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNumber).create())
+        var canvas = page.canvas
         val normal = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.rgb(35, 48, 43); textSize = 13f }
         val muted = Paint(normal).apply { color = android.graphics.Color.rgb(112, 124, 118); textSize = 10f }
         val title = Paint(normal).apply { typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD); textSize = 25f }
@@ -34,20 +35,41 @@ fun shareOfferDraft(context: Context, offer: Offer) {
         }
         canvas.drawText("Angebotsdatum: ${offer.date}", 340f, 240f, normal)
         canvas.drawText("Gültig bis: ${offer.validUntil}", 340f, 265f, normal)
+        fun drawTableHeader(top: Float) {
+            canvas.drawLine(42f, top, 553f, top, muted)
+            canvas.drawText("Leistung", 42f, top + 28f, heading)
+            canvas.drawText("Gesamtbetrag", 420f, top + 28f, heading)
+        }
+        fun nextPage(): Float {
+            document.finishPage(page)
+            pageNumber += 1
+            page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNumber).create())
+            canvas = page.canvas
+            canvas.drawText("ANGEBOTSENTWURF · FORTSETZUNG", 42f, 58f, heading)
+            canvas.drawText(offer.number, 42f, 80f, muted)
+            drawTableHeader(104f)
+            return 158f
+        }
         val tableTop = maxOf(310f, recipientY + 12f)
-        canvas.drawLine(42f, tableTop, 553f, tableTop, muted)
-        canvas.drawText("Leistung", 42f, tableTop + 28f, heading)
-        canvas.drawText("Gesamtbetrag", 420f, tableTop + 28f, heading)
-        val lines = wrapOffer(offer.description, normal, 350f).take(12)
+        drawTableHeader(tableTop)
         var y = tableTop + 62f
-        lines.forEach { line -> canvas.drawText(line, 42f, y, normal); y += 19f }
-        canvas.drawText(formatEuro(offer.amountCents), 420f, tableTop + 62f, normal)
-        y = maxOf(y + 24f, tableTop + 98f)
-        canvas.drawLine(42f, y, 553f, y, muted)
-        y += 34f
+        offerLines(offer).forEach { item ->
+            val descriptionLines = wrapOffer(item.description, normal, 350f).ifEmpty { listOf("") }
+            val lineHeight = maxOf(22f, descriptionLines.size * 19f)
+            if (y + lineHeight > 725f) y = nextPage()
+            descriptionLines.forEachIndexed { index, descriptionLine ->
+                canvas.drawText(descriptionLine, 42f, y + index * 19f, normal)
+            }
+            canvas.drawText(formatEuro(item.amountCents), 420f, y, normal)
+            y += lineHeight + 10f
+            canvas.drawLine(42f, y - 5f, 553f, y - 5f, muted)
+        }
+        if (y + 100f > 725f) y = nextPage()
+        y += 29f
         canvas.drawText("Gesamtbetrag", 340f, y, heading)
         canvas.drawText(formatEuro(offer.amountCents), 420f, y, heading)
         canvas.drawText("Dieser Angebotsentwurf ist unvollständig. Prüfe Pflichtangaben und Bedingungen vor dem Versand.", 42f, 770f, muted)
+        canvas.drawText("KontoKlar · Seite $pageNumber", 42f, 790f, muted)
         document.finishPage(page)
         FileOutputStream(file).use(document::writeTo)
     } finally {

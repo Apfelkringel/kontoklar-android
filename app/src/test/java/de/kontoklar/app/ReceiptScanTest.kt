@@ -49,16 +49,26 @@ class ReceiptScanTest {
     }
 
     @Test fun acceptedOfferConvertsWithCustomerAndAmountSnapshot() {
-        val offer = Offer(customer = "Mira", description = "Design", amountCents = 12345, customerId = "customer-1", customerAddress = "Berlin", customerEmail = "mira@example.com")
+        val lines = listOf(InvoiceLine("Konzept", 5_000), InvoiceLine("Design", 7_345))
+        val offer = Offer(customer = "Mira", description = "Konzept · Design", amountCents = 12345, customerId = "customer-1", customerAddress = "Berlin", customerEmail = "mira@example.com", lines = lines)
         val invoice = offer.toInvoice("RE-2026-0001", 21, vatRatePercent = 19)
         assertEquals("Mira", invoice.customer)
-        assertEquals("Design", invoice.description)
+        assertEquals("Konzept · Design", invoice.description)
         assertEquals(12345L, invoice.amountCents)
+        assertEquals(lines, invoice.lines)
         assertEquals("customer-1", invoice.customerId)
         assertEquals("Berlin", invoice.customerAddress)
         assertEquals("mira@example.com", invoice.customerEmail)
         assertEquals(LocalDate.now().plusDays(21).toString(), invoice.dueDate)
         assertEquals(19, invoice.vatRatePercent)
+    }
+
+    @Test fun legacySingleLineOfferStillConvertsAsOneInvoiceLine() {
+        val offer = Offer(customer = "Mira", description = "Design", amountCents = 12345)
+
+        val invoice = offer.toInvoice("RE-2026-0002", 14, vatRatePercent = 19)
+
+        assertEquals(listOf(InvoiceLine("Design", 12345)), invoiceLines(invoice))
     }
 
     @Test fun customerAddressIsFormattedForInvoiceUse() {

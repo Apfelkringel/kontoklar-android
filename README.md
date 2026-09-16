@@ -6,7 +6,7 @@ Native Android app prototype built with Kotlin and Jetpack Compose. The app uses
 
 - Dashboard with totals derived from locally saved invoices and expenses.
 - Create invoice drafts with customer, up to 20 separately described gross-price positions, and a configurable due date. Existing one-line invoices are loaded as a single position when edited.
-- Create local offer drafts, share draft PDFs, track sent/accepted/rejected/expired states, and convert accepted offers to a linked invoice draft once.
+- Create local offers with up to 20 separately described positions, share multi-page draft PDFs, track sent/accepted/rejected/expired states, and convert accepted offers to a linked invoice draft once while preserving all positions.
 - Maintain a local customer directory with search and editable names, email, billing address, and tax identifier; select a saved customer for new invoices and snapshot those billing details into the invoice draft.
 - Maintain a reusable product and service catalog with saved descriptions and gross prices; apply a catalog entry to new invoices and offers.
 - Sequential invoice draft numbers, locally persisted invoice states (draft/sent/paid), PDF draft generation, and Android share sheet.
@@ -41,7 +41,7 @@ There is no account/login or cloud sync, live bank/PSD2 connection, automatic ba
 
 ## Publishing an update
 
-Push a version tag such as `v0.21.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
+Push a version tag such as `v0.22.0`. The GitHub Actions workflow runs tests, builds a release APK, and attaches it to a public GitHub Release. The release must be signed with the same key as earlier APKs; the repository action needs the `KONTOKLAR_SIGNING_KEY_BASE64` secret. The current update signing key is the local Android debug keystore so that the already-built test APK can be upgraded; do not use this key for a public production launch.
 
 ## Build
 

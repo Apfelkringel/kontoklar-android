@@ -31,6 +31,7 @@ import java.time.LocalDate
 private val OfferInk = Color(0xFF172823)
 private val OfferForest = Color(0xFF176B52)
 private val OfferMuted = Color(0xFF78827D)
+private data class OfferLineInput(val description: String, val amount: String)
 
 @Composable
 fun OfferManagerDialog(
@@ -70,7 +71,7 @@ fun OfferManagerDialog(
                                         }
                                         Text(status, color = if (status == "Angenommen") OfferForest else OfferMuted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                                     }
-                                    Text(offer.description, color = OfferInk, fontSize = 13.sp, maxLines = 2)
+                                    Text(offerLines(offer).joinToString(" · ") { it.description }, color = OfferInk, fontSize = 13.sp, maxLines = 2)
                                     Text(formatEuro(offer.amountCents), color = OfferInk, fontWeight = FontWeight.Bold)
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                                         IconButton(onClick = { onShare(offer) }) { Icon(Icons.Default.PictureAsPdf, "Angebotsentwurf teilen", tint = OfferForest) }
@@ -112,8 +113,12 @@ fun OfferEditorDialog(
 ) {
     var customer by remember(offer.id) { mutableStateOf(offer.customer) }
     var selectedCustomer by remember(offer.id) { mutableStateOf(customers.firstOrNull { it.id == offer.customerId }) }
-    var description by remember(offer.id) { mutableStateOf(offer.description) }
-    var amount by remember(offer.id) { mutableStateOf(if (offer.amountCents > 0) formatEuro(offer.amountCents) else "") }
+    val offerLineInputs = remember(offer.id) {
+        mutableStateListOf<OfferLineInput>().apply {
+            addAll(offerLines(offer).map { OfferLineInput(it.description, if (offer.amountCents > 0) formatEuro(it.amountCents) else "") })
+            if (offer.amountCents <= 0) clear().also { add(OfferLineInput("", "")) }
+        }
+    }
     var date by remember(offer.id) { mutableStateOf(offer.date.ifBlank { LocalDate.now().toString() }) }
     var validUntil by remember(offer.id) { mutableStateOf(offer.validUntil.ifBlank { LocalDate.now().plusDays(30).toString() }) }
     var menuExpanded by remember { mutableStateOf(false) }
@@ -146,8 +151,9 @@ fun OfferEditorDialog(
                             DropdownMenuItem(
                                 text = { Column { Text(product.name); Text(formatEuro(product.unitPriceCents), color = OfferMuted, fontSize = 11.sp) } },
                                 onClick = {
-                                    description = product.description.ifBlank { product.name }
-                                    amount = formatEuro(product.unitPriceCents)
+                                    val line = OfferLineInput(product.description.ifBlank { product.name }, formatEuro(product.unitPriceCents))
+                                    if (offerLineInputs.size == 1 && offerLineInputs[0].description.isBlank() && offerLineInputs[0].amount.isBlank()) offerLineInputs[0] = line
+                                    else if (offerLineInputs.size < 20) offerLineInputs.add(line)
                                     productMenuExpanded = false
                                     error = null
                                 }
@@ -155,8 +161,22 @@ fun OfferEditorDialog(
                         }
                     }
                 }
-                OutlinedTextField(description, { description = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Leistung / Beschreibung") })
-                OutlinedTextField(amount, { amount = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Gesamtbetrag (€)") }, singleLine = true)
+                Text("Angebotspositionen · Bruttobetrag je Position", color = OfferInk, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                offerLineInputs.forEachIndexed { index, line ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            OutlinedTextField(line.description, { value -> offerLineInputs[index] = line.copy(description = value); error = null }, modifier = Modifier.fillMaxWidth(), label = { Text("Position ${index + 1} · Leistung") }, singleLine = true)
+                            OutlinedTextField(line.amount, { value -> offerLineInputs[index] = line.copy(amount = value); error = null }, modifier = Modifier.fillMaxWidth(), label = { Text("Betrag (€)") }, singleLine = true)
+                        }
+                        if (offerLineInputs.size > 1) IconButton(onClick = { offerLineInputs.removeAt(index); error = null }) { Icon(Icons.Default.DeleteOutline, "Position entfernen", tint = OfferMuted) }
+                    }
+                }
+                OutlinedButton(onClick = {
+                    if (offerLineInputs.size < 20) offerLineInputs.add(OfferLineInput("", ""))
+                    error = null
+                }, modifier = Modifier.fillMaxWidth(), enabled = offerLineInputs.size < 20) {
+                    Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("Position hinzufügen (${offerLineInputs.size}/20)")
+                }
                 OutlinedTextField(date, { date = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Angebotsdatum (JJJJ-MM-TT)") }, singleLine = true)
                 OutlinedTextField(validUntil, { validUntil = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Gültig bis (JJJJ-MM-TT)") }, singleLine = true)
                 Text("Das PDF wird als Entwurf markiert und ist noch kein rechtsgültiges Angebot.", color = OfferMuted, fontSize = 11.sp)
@@ -165,15 +185,17 @@ fun OfferEditorDialog(
         },
         confirmButton = {
             TextButton(onClick = {
-                val cents = parseEuroCents(amount)
+                val lines = offerLineInputs.map { InvoiceLine(it.description.trim(), parseEuroCents(it.amount) ?: 0L) }
+                val total = runCatching { lines.fold(0L) { sum, line -> Math.addExact(sum, line.amountCents) } }.getOrNull()
                 val parsedDate = runCatching { LocalDate.parse(date) }.getOrNull()
                 val parsedValid = runCatching { LocalDate.parse(validUntil) }.getOrNull()
                 when {
                     customer.isBlank() -> error = "Bitte gib einen Kunden an."
-                    description.isBlank() -> error = "Bitte beschreibe die angebotene Leistung."
-                    cents == null -> error = "Bitte gib einen gültigen positiven Betrag an."
+                    lines.any { it.description.isBlank() } -> error = "Bitte beschreibe jede Angebotsposition."
+                    lines.any { it.amountCents <= 0 } -> error = "Bitte gib für jede Position einen gültigen positiven Betrag an."
+                    total == null || total <= 0 -> error = "Die Summe der Angebotspositionen muss positiv und gültig sein."
                     parsedDate == null || parsedValid == null || parsedValid.isBefore(parsedDate) -> error = "Bitte prüfe Angebotsdatum und Gültigkeitsdatum."
-                    else -> onSave(offer.copy(customer = customer.trim(), customerId = selectedCustomer?.id, customerAddress = selectedCustomer?.postalAddress.orEmpty(), customerEmail = selectedCustomer?.email.orEmpty(), description = description.trim(), amountCents = cents, date = date, validUntil = validUntil))
+                    else -> onSave(offer.copy(customer = customer.trim(), customerId = selectedCustomer?.id, customerAddress = selectedCustomer?.postalAddress.orEmpty(), customerEmail = selectedCustomer?.email.orEmpty(), description = lines.joinToString(" · ") { it.description }, amountCents = total, date = date, validUntil = validUntil, lines = lines))
                 }
             }) { Text("Angebot speichern", color = OfferForest) }
         },

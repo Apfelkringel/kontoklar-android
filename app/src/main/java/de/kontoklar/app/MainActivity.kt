@@ -79,6 +79,11 @@ private fun KontoKlarApp() {
     var invoicePayments by remember { mutableStateOf(store.invoicePayments()) }
     var expenses by remember { mutableStateOf(store.expenses()) }
     var bankTransactions by remember { mutableStateOf(store.bankTransactions()) }
+    val liveBanking = remember { LiveBankingClient(context.applicationContext) }
+    var bankInstitutions by remember { mutableStateOf<List<BankingInstitution>>(emptyList()) }
+    var liveBankConnections by remember { mutableStateOf<List<LiveBankConnection>>(emptyList()) }
+    var bankingBusy by remember { mutableStateOf(false) }
+    var bankingMessage by remember { mutableStateOf<String?>(null) }
     var customers by remember { mutableStateOf(store.customers()) }
     var offers by remember { mutableStateOf(store.offers()) }
     var products by remember { mutableStateOf(store.products()) }
@@ -206,6 +211,19 @@ private fun KontoKlarApp() {
     }
     LaunchedEffect(invoices) { InvoiceReminderScheduler.reconcile(context, invoices) }
     LaunchedEffect(taxDeadlines) { TaxDeadlineReminderScheduler.reconcile(context, taxDeadlines) }
+    LaunchedEffect(page, liveBanking.isConfigured) {
+        if (page == Page.Banking && liveBanking.isConfigured) {
+            bankingBusy = true
+            runCatching {
+                withContext(Dispatchers.IO) { liveBanking.institutions() to liveBanking.connections() }
+            }.onSuccess { (banks, connections) ->
+                bankInstitutions = banks
+                liveBankConnections = connections
+                bankingMessage = null
+            }.onFailure { bankingMessage = it.message ?: "Banken konnten nicht geladen werden." }
+            bankingBusy = false
+        }
+    }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(toast) { toast?.let { snackbar.showSnackbar(it); toast = null } }
 
@@ -275,6 +293,84 @@ private fun KontoKlarApp() {
                     transactions = bankTransactions,
                     invoices = invoices,
                     expenses = expenses,
+                    bankingConfigured = liveBanking.isConfigured,
+                    institutions = bankInstitutions,
+                    connections = liveBankConnections,
+                    bankingBusy = bankingBusy,
+                    bankingMessage = bankingMessage,
+                    onConnectBank = { institution ->
+                        scope.launch {
+                            bankingBusy = true
+                            runCatching {
+                                val session = withContext(Dispatchers.IO) { liveBanking.connect(institution.id) }
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(session.authorizationUrl)))
+                                "Freigabe bei ${institution.name} geöffnet. Kehre danach hierher zurück und aktualisiere die Verbindungen."
+                            }.onSuccess { bankingMessage = it }
+                                .onFailure { bankingMessage = it.message ?: "Bankverbindung konnte nicht gestartet werden." }
+                            bankingBusy = false
+                        }
+                    },
+                    onRefreshConnections = {
+                        scope.launch {
+                            bankingBusy = true
+                            runCatching { withContext(Dispatchers.IO) { liveBanking.connections() } }
+                                .onSuccess { liveBankConnections = it; bankingMessage = "Bankverbindungen aktualisiert." }
+                                .onFailure { bankingMessage = it.message ?: "Verbindungen konnten nicht aktualisiert werden." }
+                            bankingBusy = false
+                        }
+                    },
+                    onSyncConnection = { connection ->
+                        scope.launch {
+                            bankingBusy = true
+                            runCatching { withContext(Dispatchers.IO) { liveBanking.sync(connection) } }
+                                .onSuccess { result ->
+                                    if (result.authorizationUrl != null) {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.authorizationUrl)))
+                                        bankingMessage = "Bitte bestätige die Aktualisierung bei ${connection.bankName} und kehre anschließend zurück."
+                                        bankingBusy = false
+                                        return@launch
+                                    }
+                                    val snapshot = result.snapshot
+                                    if (snapshot == null) {
+                                        bankingMessage = if (result.status == "WEB_FORM_REQUIRED") "Bitte schließe die bereits geöffnete Bankfreigabe ab." else "Bankaktualisierung läuft. Tippe gleich noch einmal auf Sync."
+                                        bankingBusy = false
+                                        return@launch
+                                    }
+                                    val known = bankTransactions.mapTo(hashSetOf(), BankTransaction::id)
+                                    val fresh = snapshot.transactions.filterNot { it.id in known }
+                                    bankTransactions = fresh + bankTransactions
+                                    if (fresh.isNotEmpty()) store.saveBankTransactions(bankTransactions)
+                                    liveBankConnections = liveBankConnections.map { if (it.id == connection.id) snapshot.connection else it }
+                                    bankingMessage = "${fresh.size} neue Umsätze von ${connection.bankName} geladen."
+                                }
+                                .onFailure { bankingMessage = it.message ?: "Bankumsätze konnten nicht synchronisiert werden." }
+                            bankingBusy = false
+                        }
+                    },
+                    onDeleteConnection = { connection ->
+                        scope.launch {
+                            bankingBusy = true
+                            runCatching { withContext(Dispatchers.IO) { liveBanking.delete(connection.id) } }
+                                .onSuccess {
+                                    liveBankConnections = liveBankConnections.filterNot { it.id == connection.id }
+                                    bankingMessage = "Verbindung zu ${connection.bankName} getrennt. Bereits importierte Buchungen bleiben lokal erhalten."
+                                }
+                                .onFailure { bankingMessage = it.message ?: "Bankverbindung konnte nicht getrennt werden." }
+                            bankingBusy = false
+                        }
+                    },
+                    onDeleteBankProfile = {
+                        scope.launch {
+                            bankingBusy = true
+                            runCatching {
+                                withContext(Dispatchers.IO) { liveBanking.deleteProviderProfile() }
+                            }.onSuccess {
+                                liveBankConnections = emptyList()
+                                bankingMessage = "Anbieterprofil und Bankfreigaben gelöscht. Lokal importierte Umsätze bleiben erhalten."
+                            }.onFailure { bankingMessage = it.message ?: "Bankprofil konnte nicht gelöscht werden." }
+                            bankingBusy = false
+                        }
+                    },
                     onImportStatement = { bankStatementImportLauncher.launch(arrayOf("application/xml", "text/xml", "application/camt.053+xml", "*/*")) },
                     onMatchInvoice = { transaction, invoice ->
                         if (transaction.amountCents > 0 && transaction.amountCents <= invoiceOutstandingCents(invoice) && invoice.status != "Entwurf") {

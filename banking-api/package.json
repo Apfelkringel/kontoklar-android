@@ -1,0 +1,16 @@
+{
+  "name": "kontoklar-open-banking-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "check": "wrangler deploy --dry-run && tsc --noEmit && npm test",
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "types": "wrangler types"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.132.0"
+  }
+}

@@ -18,12 +18,23 @@ android {
         create("release") {
             val signingKey = System.getenv("KONTOKLAR_SIGNING_KEYSTORE")
             if (!signingKey.isNullOrBlank()) {
+                val signingPassword = System.getenv("KONTOKLAR_SIGNING_PASSWORD")
+                    ?: error("KONTOKLAR_SIGNING_PASSWORD is required for release builds")
+                val signingAlias = System.getenv("KONTOKLAR_SIGNING_KEY_ALIAS")
+                    ?: error("KONTOKLAR_SIGNING_KEY_ALIAS is required for release builds")
                 storeFile = file(signingKey)
-                storePassword = "android"
-                keyAlias = "androiddebugkey"
-                keyPassword = "android"
+                storePassword = signingPassword
+                keyAlias = signingAlias
+                keyPassword = signingPassword
             }
         }
+    }
+
+    val releaseBuildRequested = gradle.startParameter.taskNames.any { task ->
+        task.substringAfterLast(':').contains("Release", ignoreCase = true)
+    }
+    if (releaseBuildRequested && System.getenv("KONTOKLAR_SIGNING_KEYSTORE").isNullOrBlank()) {
+        error("Release builds require the private KontoKlar release keystore; see docs/android-releases.md")
     }
 
     defaultConfig {
@@ -32,6 +43,8 @@ android {
         targetSdk = 35
         versionCode = 38
         versionName = "0.38.0"
+        val bankingApiBaseUrl = providers.gradleProperty("KONTOKLAR_BANKING_API_BASE_URL").orElse("").get().trimEnd('/')
+        buildConfigField("String", "BANKING_API_BASE_URL", "\"$bankingApiBaseUrl\"")
     }
 
     buildTypes {

@@ -21,10 +21,16 @@ jobs:
       - name: Restore update signing key
         env:
           SIGNING_KEY_BASE64: ${{ secrets.KONTOKLAR_SIGNING_KEY_BASE64 }}
+          SIGNING_PASSWORD: ${{ secrets.KONTOKLAR_SIGNING_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.KONTOKLAR_SIGNING_KEY_ALIAS }}
         run: |
           test -n "$SIGNING_KEY_BASE64"
-          echo "$SIGNING_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/kontoklar-signing.jks"
-          echo "KONTOKLAR_SIGNING_KEYSTORE=$RUNNER_TEMP/kontoklar-signing.jks" >> "$GITHUB_ENV"
+          test -n "$SIGNING_PASSWORD"
+          test -n "$SIGNING_KEY_ALIAS"
+          echo "$SIGNING_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/kontoklar-signing.p12"
+          echo "KONTOKLAR_SIGNING_KEYSTORE=$RUNNER_TEMP/kontoklar-signing.p12" >> "$GITHUB_ENV"
+          echo "KONTOKLAR_SIGNING_PASSWORD=$SIGNING_PASSWORD" >> "$GITHUB_ENV"
+          echo "KONTOKLAR_SIGNING_KEY_ALIAS=$SIGNING_KEY_ALIAS" >> "$GITHUB_ENV"
       - name: Test and build signed APK
         run: ./gradlew testDebugUnitTest assembleRelease
       - name: Publish APK release

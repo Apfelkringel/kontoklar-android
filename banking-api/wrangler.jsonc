@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "kontoklar-open-banking-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-16",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "FINAPI_ACCESS_BASE_URL": "https://sandbox.finapi.io",
+    "FINAPI_WEBFORM_BASE_URL": "https://webform-sandbox.finapi.io",
+    "MAX_INSTALLATIONS": "1000",
+    "MAX_NEW_INSTALLATIONS_PER_MINUTE": "20"
+  },
+  "secrets": {
+    "required": ["FINAPI_CLIENT_ID", "FINAPI_CLIENT_SECRET", "INSTALLATION_PEPPER"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "kontoklar-banking-identities",
+      "database_id": "30000b1c-8742-4461-847e-f92c1af813f9"
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 0.1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.01 }
+  },
+  "triggers": { "crons": ["17 * * * *"] }
+}

@@ -6,3 +6,12 @@ local.properties
 *.iml
 **/.DS_Store
 /app/build/
+.dev.vars
+.env
+node_modules/
+banking-api/.dev.vars.*
+banking-api/.env.*
+/signing/
+*.jks
+*.p12
+*.keystore

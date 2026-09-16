@@ -5,6 +5,25 @@ import org.junit.Test
 import java.time.LocalDate
 
 class TaxReportTest {
+    @Test fun monthlyDashboardTrendUsesSelectedYearAndExcludesInvoiceDrafts() {
+        val invoices = listOf(
+            Invoice(customer = "A", description = "Work", amountCents = 10_000, date = "2026-01-12", status = "Versendet"),
+            Invoice(customer = "B", description = "Work", amountCents = 7_000, date = "2026-01-18", status = "Entwurf"),
+            Invoice(customer = "C", description = "Work", amountCents = 5_000, date = "2025-12-31", status = "Bezahlt")
+        )
+        val expenses = listOf(
+            Expense(merchant = "Office", category = "Büro", amountCents = 2_500, date = "2026-01-15"),
+            Expense(merchant = "Old", category = "Büro", amountCents = 9_000, date = "2025-12-31"),
+            Expense(merchant = "Invalid", category = "Sonstiges", amountCents = 50, date = "invalid")
+        )
+
+        val trend = financialYearTrend(2026, invoices, expenses)
+
+        assertEquals(12, trend.size)
+        assertEquals(FinancialMonthTotal(1, 10_000, 2_500), trend.first())
+        assertEquals(FinancialMonthTotal(12, 0, 0), trend.last())
+    }
+
     @Test fun openInvoiceTotalUsesUnpaidRemainderAfterPartialPayment() {
         val partial = Invoice(number = "R-1", customer = "A", description = "Service", amountCents = 10_000, date = "2026-03-01", dueDate = "2026-03-02", status = "Teilbezahlt", paidCents = 2_500)
         val report = taxYearReport(2026, listOf(partial), emptyList(), LocalDate.parse("2026-03-05"))
@@ -100,5 +119,25 @@ class TaxReportTest {
         assertEquals(listOf("Software", "Reisekosten", "Ohne Kategorie"), totals.map(ExpenseCategoryTotal::category))
         assertEquals(listOf(10_000L, 8000L, 500L), totals.map(ExpenseCategoryTotal::amountCents))
         assertEquals(listOf(2, 1, 1), totals.map(ExpenseCategoryTotal::count))
+    }
+
+    @Test fun groupsExpensePaymentEventsByPaymentYearAndRecordedCategory() {
+        val expenses = listOf(
+            Expense(id = "e1", merchant = "Phone", category = "Software", amountCents = 10_000, date = "2025-12-20"),
+            Expense(id = "e2", merchant = "Office", category = "", amountCents = 5_000, date = "2026-01-20")
+        )
+        val payments = listOf(
+            ExpensePayment(expenseId = "e1", amountCents = 4_000, date = "2026-01-02"),
+            ExpensePayment(expenseId = "e1", amountCents = 6_000, date = "2025-12-30"),
+            ExpensePayment(expenseId = "e2", amountCents = 2_000, date = "2026-02-01"),
+            ExpensePayment(expenseId = "deleted", amountCents = 700, date = "2026-02-02"),
+            ExpensePayment(expenseId = "e2", amountCents = 900, date = "not-a-date")
+        )
+
+        val totals = cashExpenseYearByCategory(2026, expenses, payments)
+
+        assertEquals(listOf("Software", "Ohne Kategorie", "Nicht zugeordnet"), totals.map(CashExpenseCategoryTotal::category))
+        assertEquals(listOf(4_000L, 2_000L, 700L), totals.map(CashExpenseCategoryTotal::paidCents))
+        assertEquals(listOf(1, 1, 1), totals.map(CashExpenseCategoryTotal::paymentCount))
     }
 }

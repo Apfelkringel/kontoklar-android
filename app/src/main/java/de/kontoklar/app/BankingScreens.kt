@@ -45,12 +45,35 @@ fun BankingScreen(
     transactions: List<BankTransaction>,
     invoices: List<Invoice>,
     expenses: List<Expense>,
+    bankingConfigured: Boolean,
+    institutions: List<BankingInstitution>,
+    connections: List<LiveBankConnection>,
+    bankingBusy: Boolean,
+    bankingMessage: String?,
+    onConnectBank: (BankingInstitution?) -> Unit,
+    onRefreshConnections: () -> Unit,
+    onSyncConnection: (LiveBankConnection) -> Unit,
+    onDeleteConnection: (LiveBankConnection) -> Unit,
+    onDeleteBankProfile: () -> Unit,
     onImportStatement: () -> Unit,
     onMatchInvoice: (BankTransaction, Invoice) -> Unit,
     onMatchExpense: (BankTransaction, Expense) -> Unit
 ) {
     val credits = transactions.filter { it.amountCents > 0 }
     val debits = transactions.filter { it.amountCents < 0 }
+    var confirmDeleteBankProfile by remember { mutableStateOf(false) }
+    if (confirmDeleteBankProfile) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteBankProfile = false },
+            title = { Text("Alle Bankfreigaben löschen?") },
+            text = { Text("KontoKlar löscht das Open-Banking-Profil und trennt alle Verbindungen beim Anbieter. Bereits lokal importierte Umsätze bleiben auf diesem Gerät erhalten. Diese Aktion kann nicht rückgängig gemacht werden.") },
+            confirmButton = {
+                TextButton(onClick = { confirmDeleteBankProfile = false; onDeleteBankProfile() }) { Text("Profil löschen") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDeleteBankProfile = false }) { Text("Abbrechen") }
+            }
+        )
+    }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 90.dp),
@@ -76,8 +99,63 @@ fun BankingScreen(
             }
         }
         item {
+            Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.SyncAlt, null, tint = Forest)
+                        Spacer(Modifier.width(9.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Bank direkt verbinden", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text("Freigabe bei deiner Bank · Zugangsdaten nicht in KontoKlar eingeben", color = Muted, fontSize = 11.sp)
+                        }
+                        if (bankingConfigured) TextButton(onClick = onRefreshConnections, enabled = !bankingBusy) { Text("Aktualisieren") }
+                    }
+                    if (!bankingConfigured) {
+                        Text("Noch nicht aktiv: Der sichere Open-Banking-Server und der Anbieterzugang müssen zuerst eingerichtet werden.", color = Muted, fontSize = 12.sp)
+                    } else {
+                        Text("Freigabe und Datenabruf laufen über finAPI. PIN und TAN gibst du ausschließlich im Bank-/finAPI-Dialog ein. Umsätze werden vom Anbieter abgerufen und danach in KontoKlar lokal gespeichert.", color = Muted, fontSize = 11.sp)
+                        Button(
+                            onClick = { onConnectBank(null) }, enabled = !bankingBusy,
+                            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Forest)
+                        ) { Text("Bank suchen und verbinden") }
+                        if (institutions.isEmpty() && connections.isEmpty()) {
+                            Text(
+                                if (bankingBusy) "Banken werden geladen …" else "Der Anbieter meldet aktuell keine unterstützte Bank. Prüfe später erneut oder importiere einen Auszug.",
+                                color = Muted,
+                                fontSize = 12.sp
+                            )
+                        }
+                        institutions.forEach { institution ->
+                            OutlinedButton(
+                                onClick = { onConnectBank(institution) }, enabled = !bankingBusy,
+                                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
+                            ) { Text("${institution.name} direkt verbinden") }
+                        }
+                        connections.forEach { connection ->
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(connection.bankName, color = Ink, fontWeight = FontWeight.SemiBold)
+                                    Text(connection.status, color = Muted, fontSize = 11.sp)
+                                }
+                                TextButton(enabled = !bankingBusy, onClick = { onSyncConnection(connection) }) { Text("Sync") }
+                                TextButton(enabled = !bankingBusy, onClick = { onDeleteConnection(connection) }) { Text("Trennen") }
+                            }
+                        }
+                        TextButton(
+                            onClick = { confirmDeleteBankProfile = true },
+                            enabled = !bankingBusy,
+                            modifier = Modifier.align(Alignment.End)
+                        ) { Text("Alle Bankfreigaben und Anbieterprofil löschen", color = Muted, fontSize = 11.sp) }
+                        if (bankingBusy) Text("Sichere Verbindung wird verarbeitet …", color = Muted, fontSize = 12.sp)
+                        bankingMessage?.let { Text(it, color = Forest, fontSize = 12.sp) }
+                    }
+                }
+            }
+        }
+        item {
             Button(onClick = onImportStatement, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest)) {
-                Icon(Icons.Default.FileOpen, null); Spacer(Modifier.width(8.dp)); Text("Kontoauszug importieren · CAMT / CSV")
+                Icon(Icons.Default.FileOpen, null); Spacer(Modifier.width(8.dp)); Text("Kontoauszug importieren · CAMT / CSV / XLSX / TR-PDF")
             }
         }
         item {
@@ -85,7 +163,7 @@ fun BankingScreen(
                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
                     Icon(Icons.Default.CloudOff, null, tint = Forest)
                     Spacer(Modifier.width(10.dp))
-                    Text("Kein Live-Bankzugriff: Der Kontoauszug wird lokal verarbeitet. KontoKlar erhält keine Bank-Zugangsdaten und bewegt kein Geld. Zahlungsvorschläge werden erst nach deiner Bestätigung übernommen.", color = Ink, fontSize = 12.sp)
+                    Text("KontoKlar bewegt kein Geld. Zahlungsvorschläge werden erst nach deiner Bestätigung übernommen. Live-Umsätze werden nur nach deiner Bankfreigabe geladen.", color = Ink, fontSize = 12.sp)
                 }
             }
         }
@@ -96,7 +174,7 @@ fun BankingScreen(
                     Icon(Icons.Default.SyncAlt, null, tint = Forest)
                     Spacer(Modifier.height(8.dp))
                     Text("Umsätze sicher abgleichen", color = Ink, fontWeight = FontWeight.SemiBold)
-                    Text("Importiere einen CAMT.053-Auszug oder einen CSV-Umsatzexport (C24 / comdirect).", color = Muted, fontSize = 12.sp)
+                    Text("Importiere CAMT.053, C24-/comdirect-CSV, C24-Excel (.xlsx) oder einen Trade-Republic-Kontoauszug als PDF. Dateien werden auf dem Gerät verarbeitet.", color = Muted, fontSize = 12.sp)
                 }
             }
         }

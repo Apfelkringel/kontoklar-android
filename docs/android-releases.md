@@ -4,7 +4,7 @@ KontoKlar prüft auf ein öffentliches GitHub-Release, lädt die APK in einen pr
 
 ## Release-Signaturschlüssel
 
-Die ersten lokalen Testinstallationen verwendeten den standardmäßigen Android-Debug-Keystore. Die veröffentlichten Releases verwenden stattdessen einen privaten, dedizierten Release-Schlüssel. Das aktuelle veröffentlichte Release `v0.38.0` wurde mit diesem Schlüssel signiert; sein Zertifikatsfingerprint stimmt mit dem unten aufgeführten Fingerprint überein. Das vorbereitete Update `v0.39.0` muss denselben Schlüssel verwenden. Der private Schlüssel darf weder neu erzeugt noch verloren oder in Git eingecheckt werden.
+Die ersten lokalen Testinstallationen verwendeten den standardmäßigen Android-Debug-Keystore. Die veröffentlichten Releases verwenden stattdessen einen privaten, dedizierten Release-Schlüssel. Die veröffentlichten Updates `v0.39.0` und `v0.40.0` verwenden denselben Schlüssel; sein Zertifikatsfingerprint stimmt mit dem unten aufgeführten Fingerprint überein. Der private Schlüssel darf weder neu erzeugt noch verloren oder in Git eingecheckt werden.
 
 Ein APK, das noch mit dem öffentlichen Debug-Schlüssel installiert wurde, kann Android nicht direkt durch ein mit dem privaten Release-Schlüssel signiertes APK aktualisieren. Vor dem Wechsel einer solchen lokalen Testinstallation bitte in der App ein verschlüsseltes Backup erstellen; die Release-App muss dann frisch installiert und das Backup wiederhergestellt werden. Updates zwischen den mit dem stabilen Release-Schlüssel signierten Releases funktionieren normal.
 
@@ -25,7 +25,7 @@ Der Tag-Workflow testet die App, erstellt ein signiertes Release-APK und veröff
 1. `versionCode` erhöhen und `versionName` setzen.
 2. `./gradlew testDebugUnitTest assembleDebug` erfolgreich ausführen.
 3. Den gewünschten Quellstand committen und pushen.
-4. Einen neuen Tag erstellen und pushen, zum Beispiel `v0.39.0`.
+4. Einen neuen Tag erstellen und pushen, zum Beispiel `v0.40.0`.
 5. GitHub Actions und die Asset-Prüfsumme kontrollieren. Erst danach erscheint das Update in der App.
 
 `assembleRelease` bricht absichtlich ab, wenn die Release-Secrets fehlen. Debug-Builds benötigen den Release-Schlüssel nicht.

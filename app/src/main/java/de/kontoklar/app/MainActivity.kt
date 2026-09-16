@@ -404,6 +404,14 @@ private fun KontoKlarApp() {
                                 }
                                 .onFailure { toast = it.message ?: "Ausgabezahlung konnte nicht zugeordnet werden." }
                         }
+                    },
+                    onClassifyTransaction = { transaction, classification ->
+                        runCatching { store.updateBankTransactionClassification(transaction.id, classification) }
+                            .onSuccess {
+                                bankTransactions = store.bankTransactions()
+                                toast = if (classification.isBlank()) "Kennzeichnung entfernt" else "Bankumsatz als „$classification“ markiert"
+                            }
+                            .onFailure { toast = it.message ?: "Kennzeichnung konnte nicht gespeichert werden." }
                     }
                 )
             }

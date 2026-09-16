@@ -57,7 +57,8 @@ fun BankingScreen(
     onDeleteBankProfile: () -> Unit,
     onImportStatement: () -> Unit,
     onMatchInvoice: (BankTransaction, Invoice) -> Unit,
-    onMatchExpense: (BankTransaction, Expense) -> Unit
+    onMatchExpense: (BankTransaction, Expense) -> Unit,
+    onClassifyTransaction: (BankTransaction, String) -> Unit
 ) {
     val credits = transactions.filter { it.amountCents > 0 }
     val debits = transactions.filter { it.amountCents < 0 }
@@ -179,7 +180,7 @@ fun BankingScreen(
             }
         }
         items(transactions.sortedByDescending(BankTransaction::date), key = BankTransaction::id) { transaction ->
-            BankTransactionCard(transaction, invoices, expenses, transactions, onMatchInvoice, onMatchExpense)
+            BankTransactionCard(transaction, invoices, expenses, transactions, onMatchInvoice, onMatchExpense, onClassifyTransaction)
         }
     }
 }
@@ -199,15 +200,17 @@ private fun BankTransactionCard(
     expenses: List<Expense>,
     transactions: List<BankTransaction>,
     onMatchInvoice: (BankTransaction, Invoice) -> Unit,
-    onMatchExpense: (BankTransaction, Expense) -> Unit
+    onMatchExpense: (BankTransaction, Expense) -> Unit,
+    onClassifyTransaction: (BankTransaction, String) -> Unit
 ) {
     val amountColor = if (transaction.amountCents >= 0) Forest else Ink
     val linkedInvoice = invoices.firstOrNull { it.id == transaction.matchedInvoiceId }
-    val suggestion = suggestInvoiceMatch(transaction, invoices)
+    val suggestion = suggestInvoiceMatch(transaction, invoices).takeIf { transaction.userClassification.isBlank() }
     val linkedExpense = expenses.firstOrNull { it.id == transaction.matchedExpenseId }
-    val expenseSuggestion = suggestExpenseMatch(transaction, expenses, transactions)
+    val expenseSuggestion = suggestExpenseMatch(transaction, expenses, transactions).takeIf { transaction.userClassification.isBlank() }
     var confirmMatch by remember(transaction.id) { mutableStateOf(false) }
     var confirmExpenseMatch by remember(transaction.id) { mutableStateOf(false) }
+    var classificationDialog by remember(transaction.id) { mutableStateOf(false) }
     if (confirmMatch && suggestion != null) {
         AlertDialog(
             onDismissRequest = { confirmMatch = false },
@@ -230,6 +233,27 @@ private fun BankTransactionCard(
             dismissButton = { TextButton(onClick = { confirmExpenseMatch = false }) { Text("Abbrechen") } }
         )
     }
+    if (classificationDialog) {
+        AlertDialog(
+            onDismissRequest = { classificationDialog = false },
+            title = { Text("Bankumsatz kennzeichnen") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Eigene Sortierhilfe. Diese Kennzeichnung ist keine steuerliche Zuordnung und ändert keine Einnahmen, Ausgaben oder Steuerwerte.", color = Muted, fontSize = 12.sp)
+                    if (transaction.userClassification.isNotBlank()) {
+                        TextButton(onClick = { classificationDialog = false; onClassifyTransaction(transaction, "") }) { Text("Kennzeichnung entfernen") }
+                    }
+                    BANK_TRANSACTION_CLASSIFICATIONS.forEach { classification ->
+                        TextButton(onClick = { classificationDialog = false; onClassifyTransaction(transaction, classification) }) {
+                            Text(classification, color = Ink)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { classificationDialog = false }) { Text("Schließen") } }
+        )
+    }
     Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
         Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.Top) {
@@ -250,6 +274,7 @@ private fun BankTransactionCard(
                 transaction.matchedExpenseId != null -> Text("Zugeordnete Ausgabe nicht mehr vorhanden", color = Muted, fontSize = 12.sp)
                 linkedInvoice != null -> Text("Zugeordnet zu ${linkedInvoice.number} · ${linkedInvoice.status}", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 transaction.matchedInvoiceId != null -> Text("Zugeordnete Rechnung nicht mehr vorhanden", color = Muted, fontSize = 12.sp)
+                transaction.userClassification.isNotBlank() -> Text("Eigene Kennzeichnung · ${transaction.userClassification}", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 suggestion != null -> OutlinedButton(onClick = { confirmMatch = true }, modifier = Modifier.fillMaxWidth()) {
                     Text("${formatEuro(transaction.amountCents)} auf ${suggestion.number} buchen", color = Forest)
                 }
@@ -258,6 +283,11 @@ private fun BankTransactionCard(
                     Text("Ausgabe ${expenseSuggestion.merchant} abgleichen", color = Forest)
                 }
                 transaction.amountCents < 0L -> Text("Keine eindeutige erfasste Ausgabe mit diesem Betrag gefunden.", color = Muted, fontSize = 11.sp)
+            }
+            if (transaction.matchedInvoiceId == null && transaction.matchedExpenseId == null) {
+                OutlinedButton(onClick = { classificationDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (transaction.userClassification.isBlank()) "Als privat/geschäftlich kennzeichnen" else "Kennzeichnung ändern", color = Forest)
+                }
             }
         }
     }

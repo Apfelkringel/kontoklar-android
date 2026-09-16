@@ -18,8 +18,26 @@ data class BankTransaction(
     val amountCents: Long,
     val reference: String,
     val matchedInvoiceId: String? = null,
-    val matchedExpenseId: String? = null
+    val matchedExpenseId: String? = null,
+    val userClassification: String = ""
 )
+
+val BANK_TRANSACTION_CLASSIFICATIONS = listOf(
+    "Privat",
+    "Geschäftliche Einnahme · ohne Rechnung",
+    "Geschäftliche Ausgabe · ohne Beleg",
+    "Steuerzahlung",
+    "Umbuchung",
+    "Sonstiges geschäftlich"
+)
+
+fun classifyBankTransaction(transaction: BankTransaction, classification: String): BankTransaction {
+    require(classification.isBlank() || classification in BANK_TRANSACTION_CLASSIFICATIONS) { "Diese Kennzeichnung ist nicht verfügbar." }
+    require(classification.isBlank() || (transaction.matchedInvoiceId == null && transaction.matchedExpenseId == null)) {
+        "Eine zugeordnete Buchung wird über ihre Rechnung oder Ausgabe gekennzeichnet."
+    }
+    return transaction.copy(userClassification = classification)
+}
 
 data class ParsedBankStatement(val accountIbans: List<String>, val transactions: List<BankTransaction>)
 

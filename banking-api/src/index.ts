@@ -15,7 +15,9 @@ const TARGET_BANKS = [
   { key: "trade-republic", search: "Trade Republic", label: "Trade Republic" },
 ] as const;
 const MAX_JSON_BYTES = 64 * 1024;
-const MAX_TRANSACTION_PAGES = 5;
+const TRANSACTIONS_PER_PAGE = 100;
+const MAX_TRANSACTION_PAGES = 50;
+const ACCESS_HOSTS = new Set(["sandbox.finapi.io", "live.finapi.io"]);
 const WEB_FORM_HOSTS = new Set(["webform-sandbox.finapi.io", "webform-live.finapi.io"]);
 
 export default {
@@ -30,7 +32,7 @@ export default {
 
     try {
       const identity = await authenticate(request, env);
-      await applyRateLimit(request, env, identity.hash, identity.row.provider_user_ready === 0);
+      await applyInstallationRateLimit(env, identity.hash);
       const accessToken = await userAccessToken(identity, env);
       const path = url.pathname;
 
@@ -140,9 +142,15 @@ async function authenticate(request: Request, env: Env): Promise<{ hash: string;
   const userId = `kk_${hash.slice(0, 32)}`;
   const password = await hmac(env.INSTALLATION_PEPPER, `finapi-user:${token}`);
   const now = new Date().toISOString();
-  await env.DB.prepare(
-    "INSERT OR IGNORE INTO installations (installation_hash, provider_user_id, created_at, last_seen_at, provider_user_ready) VALUES (?, ?, ?, ?, 0)",
-  ).bind(hash, userId, now, now).run();
+  const existing = await env.DB.prepare("SELECT installation_hash, provider_user_id, created_at, provider_user_ready FROM installations WHERE installation_hash = ?")
+    .bind(hash).first<Installation>();
+  // Admission control must happen before a new durable installation is written.
+  await applyIpRateLimit(request, env, !existing || existing.provider_user_ready === 0);
+  if (!existing) {
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO installations (installation_hash, provider_user_id, created_at, last_seen_at, provider_user_ready) VALUES (?, ?, ?, ?, 0)",
+    ).bind(hash, userId, now, now).run();
+  }
   const row = await env.DB.prepare("SELECT installation_hash, provider_user_id, created_at, provider_user_ready FROM installations WHERE installation_hash = ?")
     .bind(hash).first<Installation>();
   if (!row || row.provider_user_id !== userId) throw new HttpError(503, "Bankdienst konnte das lokale Profil nicht laden.");
@@ -151,29 +159,39 @@ async function authenticate(request: Request, env: Env): Promise<{ hash: string;
   return { hash, userId, password, row };
 }
 
-async function applyRateLimit(request: Request, env: Env, installationHash: string, newInstallation: boolean): Promise<void> {
+async function applyIpRateLimit(request: Request, env: Env, newInstallation: boolean): Promise<void> {
   const window = Math.floor(Date.now() / 60_000);
   const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
   const ipKey = await hmac(env.INSTALLATION_PEPPER, `ip:${ip}`);
-  const limitKeys = [`ip:${ipKey}`, `installation:${installationHash}`];
-  for (const key of limitKeys) {
-    await env.DB.prepare(
-      "INSERT INTO request_limits (bucket_key, window_id, hits) VALUES (?, ?, 1) ON CONFLICT(bucket_key) DO UPDATE SET window_id = excluded.window_id, hits = CASE WHEN request_limits.window_id = excluded.window_id THEN request_limits.hits + 1 ELSE 1 END",
-    ).bind(key, window).run();
-    const count = await env.DB.prepare("SELECT hits FROM request_limits WHERE bucket_key = ? AND window_id = ?")
-      .bind(key, window).first<{ hits: number }>();
-    const limit = key.startsWith("ip:") ? (newInstallation ? 5 : 60) : 30;
-    if ((count?.hits ?? limit + 1) > limit) throw new HttpError(429, "Zu viele Anfragen. Bitte kurz warten.");
-  }
+  const key = `ip:${ipKey}`;
+  await env.DB.prepare(
+    "INSERT INTO request_limits (bucket_key, window_id, hits) VALUES (?, ?, 1) ON CONFLICT(bucket_key) DO UPDATE SET window_id = excluded.window_id, hits = CASE WHEN request_limits.window_id = excluded.window_id THEN request_limits.hits + 1 ELSE 1 END",
+  ).bind(key, window).run();
+  const count = await env.DB.prepare("SELECT hits FROM request_limits WHERE bucket_key = ? AND window_id = ?")
+    .bind(key, window).first<{ hits: number }>();
+  const limit = newInstallation ? 5 : 60;
+  if ((count?.hits ?? limit + 1) > limit) throw new HttpError(429, "Zu viele Anfragen. Bitte kurz warten.");
+}
+
+async function applyInstallationRateLimit(env: Env, installationHash: string): Promise<void> {
+  const window = Math.floor(Date.now() / 60_000);
+  const key = `installation:${installationHash}`;
+  await env.DB.prepare(
+    "INSERT INTO request_limits (bucket_key, window_id, hits) VALUES (?, ?, 1) ON CONFLICT(bucket_key) DO UPDATE SET window_id = excluded.window_id, hits = CASE WHEN request_limits.window_id = excluded.window_id THEN request_limits.hits + 1 ELSE 1 END",
+  ).bind(key, window).run();
+  const count = await env.DB.prepare("SELECT hits FROM request_limits WHERE bucket_key = ? AND window_id = ?")
+    .bind(key, window).first<{ hits: number }>();
+  if ((count?.hits ?? 31) > 30) throw new HttpError(429, "Zu viele Anfragen. Bitte kurz warten.");
 }
 
 async function clientAccessToken(env: Env): Promise<string> {
+  const base = providerBaseUrl(env, "access");
   const form = new URLSearchParams({
     grant_type: "client_credentials",
     client_id: env.FINAPI_CLIENT_ID,
     client_secret: env.FINAPI_CLIENT_SECRET,
   });
-  const response = await fetch(`${trimSlash(env.FINAPI_ACCESS_BASE_URL)}/api/v2/oauth/token`, {
+  const response = await fetch(new URL("/api/v2/oauth/token", base), {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
     body: form,
@@ -196,6 +214,7 @@ async function userAccessToken(identity: { userId: string; password: string }, e
     if (!created.ok && created.status !== 409) throw providerError(created.status);
     await env.DB.prepare("UPDATE installations SET provider_user_ready = 1 WHERE provider_user_id = ?").bind(identity.userId).run();
   }
+  const base = providerBaseUrl(env, "access");
   const form = new URLSearchParams({
     grant_type: "password",
     client_id: env.FINAPI_CLIENT_ID,
@@ -203,7 +222,7 @@ async function userAccessToken(identity: { userId: string; password: string }, e
     username: identity.userId,
     password: identity.password,
   });
-  const response = await fetch(`${trimSlash(env.FINAPI_ACCESS_BASE_URL)}/api/v2/oauth/token`, {
+  const response = await fetch(new URL("/api/v2/oauth/token", base), {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
     body: form,
@@ -247,7 +266,8 @@ async function connectionSnapshot(
   token: string,
   env: Env,
 ): Promise<ProviderRow> {
-  const accountQuery = new URLSearchParams({ bankConnectionIds: connection.id, page: "1", perPage: "100" });
+  // finAPI's Accounts API returns an AccountList (not a pageable list).
+  const accountQuery = new URLSearchParams({ bankConnectionIds: connection.id });
   const accountData = await providerJson(env, "access", `/api/v2/accounts?${accountQuery}`, token);
   const accounts = collection(accountData, ["accounts", "items"]);
   const ibanByAccountId = new Map<string, string>();
@@ -263,13 +283,26 @@ async function connectionSnapshot(
   }
 
   const transactions: ProviderRow[] = [];
+  let hasMoreTransactions = false;
   for (let page = 1; page <= MAX_TRANSACTION_PAGES && accountIds.length > 0; page++) {
-    const query = new URLSearchParams({ view: "userView", accountIds: accountIds.join(","), page: String(page), perPage: "100" });
+    const query = new URLSearchParams({ view: "userView", accountIds: accountIds.join(","), page: String(page), perPage: String(TRANSACTIONS_PER_PAGE) });
     const data = await providerJson(env, "access", `/api/v2/transactions?${query}`, token);
     const rows = collection(data, ["transactions", "items"]);
     transactions.push(...rows);
-    if (rows.length < 100) break;
+    const paging = data.paging;
+    if (paging && typeof paging === "object" && !Array.isArray(paging) && "pageCount" in paging) {
+      const pageCount = (paging as ProviderRow).pageCount;
+      if (typeof pageCount !== "number" || !Number.isSafeInteger(pageCount) || pageCount < page) {
+        throw new HttpError(502, "Der Anbieter hat ungültige Seiteninformationen für die Umsätze geliefert.");
+      }
+      hasMoreTransactions = page < pageCount;
+    } else {
+      // Fallback for older provider responses without paging metadata.
+      hasMoreTransactions = rows.length === TRANSACTIONS_PER_PAGE;
+    }
+    if (!hasMoreTransactions) break;
   }
+  if (hasMoreTransactions) throw new HttpError(502, "Der Abruf der Umsätze hat das sichere Seitenlimit erreicht. Bitte erneut synchronisieren.");
 
   return {
     id: connection.id,
@@ -406,11 +439,7 @@ async function providerFetch(
   extraHeaders: Record<string, string> = {},
   acceptedStatuses: number[] = [],
 ): Promise<Response> {
-  const base = api === "access" ? env.FINAPI_ACCESS_BASE_URL : env.FINAPI_WEBFORM_BASE_URL;
-  const root = new URL(base);
-  if (root.protocol !== "https:" || !["sandbox.finapi.io", "live.finapi.io", "webform-sandbox.finapi.io", "webform-live.finapi.io"].includes(root.host)) {
-    throw new HttpError(503, "Die finAPI-Serveradresse ist nicht freigegeben.");
-  }
+  const root = new URL(providerBaseUrl(env, api));
   if (!path.startsWith("/") || path.startsWith("//")) throw new HttpError(400, "Ungültiger Provider-Endpunkt.");
   const url = new URL(path, root);
   if (url.host !== root.host || url.protocol !== "https:") throw new HttpError(400, "Ungültiger Provider-Endpunkt.");
@@ -549,8 +578,19 @@ function requireWebFormUrl(value: unknown, env: Env): string {
   }
 }
 
-function trimSlash(value: string): string {
-  return value.replace(/\/+$/, "");
+function providerBaseUrl(env: Env, api: "access" | "webform"): URL {
+  const value = api === "access" ? env.FINAPI_ACCESS_BASE_URL : env.FINAPI_WEBFORM_BASE_URL;
+  let base: URL;
+  try {
+    base = new URL(value);
+  } catch {
+    throw new HttpError(503, "Die finAPI-Serveradresse ist nicht freigegeben.");
+  }
+  const allowedHosts = api === "access" ? ACCESS_HOSTS : WEB_FORM_HOSTS;
+  if (base.protocol !== "https:" || !allowedHosts.has(base.host) || base.pathname !== "/" || base.search || base.hash || base.username || base.password) {
+    throw new HttpError(503, "Die finAPI-Serveradresse ist nicht freigegeben.");
+  }
+  return base;
 }
 
 async function sha256(value: string): Promise<string> {

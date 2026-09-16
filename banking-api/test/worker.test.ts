@@ -95,6 +95,28 @@ test("requires an installation bearer token and answers health without provider 
   assert.deepEqual(await unauthorized.json(), { error: "App-Schlüssel fehlt oder ist ungültig." });
 });
 
+test("rejects an untrusted Access API base URL before sending OAuth credentials", async () => {
+  for (const baseUrl of ["http://sandbox.finapi.io", "https://attacker.example", "https://webform-sandbox.finapi.io", "https://sandbox.finapi.io.evil.example"]) {
+    const env = baseEnv();
+    env.FINAPI_ACCESS_BASE_URL = baseUrl;
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls++;
+      return Response.json({ access_token: "must-not-be-requested" });
+    };
+    try {
+      const response = await worker.fetch(new Request("https://api.test/v1/banks", {
+        headers: { Authorization: `Bearer ${"U".repeat(43)}`, "CF-Connecting-IP": "192.0.2.20" },
+      }), env as never, {} as never);
+      assert.equal(response.status, 503, baseUrl);
+      assert.equal(calls, 0, baseUrl);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+});
+
 test("provisions an isolated provider user and returns only supported target banks", async () => {
   const env = baseEnv();
   const originalFetch = globalThis.fetch;
@@ -134,6 +156,34 @@ test("provisions an isolated provider user and returns only supported target ban
     assert.equal([...env.DB.installations.values()][0].provider_user_ready, 1);
     assert.ok(providerCalls.some((call) => call.url.pathname === "/api/v2/users" && call.authorization === "Bearer client-token"));
     assert.ok(providerCalls.filter((call) => call.url.pathname === "/api/v2/banks").every((call) => call.authorization === "Bearer user-token"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("rejects excess new installations before persisting their D1 identity", async () => {
+  const env = baseEnv();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname === "/api/v2/oauth/token") {
+      const grant = new URLSearchParams(String(init?.body)).get("grant_type");
+      return Response.json({ access_token: grant === "client_credentials" ? "client-token" : "user-token" });
+    }
+    if (url.pathname === "/api/v2/users" && init?.method === "POST") return Response.json({ id: "user" }, { status: 201 });
+    if (url.pathname === "/api/v2/banks") return Response.json({ banks: [] });
+    return Response.json({ error: "unexpected test route" }, { status: 500 });
+  };
+  try {
+    const responses: number[] = [];
+    for (let index = 0; index < 6; index++) {
+      const response = await worker.fetch(new Request("https://api.test/v1/banks", {
+        headers: { Authorization: `Bearer ${String.fromCharCode(65 + index).repeat(43)}`, "CF-Connecting-IP": "192.0.2.30" },
+      }), env as never, {} as never);
+      responses.push(response.status);
+    }
+    assert.deepEqual(responses, [200, 200, 200, 200, 200, 429]);
+    assert.equal(env.DB.installations.size, 5);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -183,6 +233,72 @@ test("creates a provider-hosted bank consent and normalizes linked EUR transacti
       id: "987", bankName: "C24", status: "READY",
       transactions: [{ id: "77:456", accountIban: "DE02120300000000202051", date: "2026-09-15", counterparty: "Stadtwerke", description: "Abschlag", amountCents: -1234, reference: "ref-1" }],
     });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("fetches transaction pages beyond the former five-page cutoff", async () => {
+  const env = baseEnv();
+  const originalFetch = globalThis.fetch;
+  const requestedPages: number[] = [];
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname === "/api/v2/oauth/token") {
+      const grant = new URLSearchParams(String(init?.body)).get("grant_type");
+      return Response.json({ access_token: grant === "client_credentials" ? "client-token" : "user-token" });
+    }
+    if (url.pathname === "/api/v2/users" && init?.method === "POST") return Response.json({ id: "user" }, { status: 201 });
+    if (url.pathname === "/api/v2/bankConnections") return Response.json({ bankConnections: [{ id: 987, bank: { name: "C24" }, updateStatus: "READY" }] });
+    if (url.pathname === "/api/v2/accounts") {
+      assert.equal(url.searchParams.has("page"), false);
+      assert.equal(url.searchParams.has("perPage"), false);
+      return Response.json({ accounts: [{ id: 77, currency: "EUR" }] });
+    }
+    if (url.pathname === "/api/v2/transactions") {
+      const page = Number(url.searchParams.get("page"));
+      requestedPages.push(page);
+      const transactions = page < 6
+        ? Array.from({ length: 100 }, (_, index) => ({ id: `${page}-${index}`, accountId: 77, amount: 1, currency: "EUR", bankBookingDate: "2026-09-16" }))
+        : [{ id: "last", accountId: 77, amount: 1, currency: "EUR", bankBookingDate: "2026-09-16" }];
+      return Response.json({ transactions, paging: { page, perPage: 100, pageCount: 6, totalCount: 501 } });
+    }
+    return Response.json({ error: "unexpected test route" }, { status: 500 });
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.test/v1/connections/987", {
+      headers: { Authorization: `Bearer ${"V".repeat(43)}`, "CF-Connecting-IP": "192.0.2.21" },
+    }), env as never, {} as never);
+    assert.equal(response.status, 200);
+    const snapshot = await response.json() as { transactions: unknown[] };
+    assert.equal(snapshot.transactions.length, 501);
+    assert.deepEqual(requestedPages, [1, 2, 3, 4, 5, 6]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("does not return a successful partial snapshot when transaction paging reaches its safety cap", async () => {
+  const env = baseEnv();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname === "/api/v2/oauth/token") {
+      const grant = new URLSearchParams(String(init?.body)).get("grant_type");
+      return Response.json({ access_token: grant === "client_credentials" ? "client-token" : "user-token" });
+    }
+    if (url.pathname === "/api/v2/users" && init?.method === "POST") return Response.json({ id: "user" }, { status: 201 });
+    if (url.pathname === "/api/v2/bankConnections") return Response.json({ bankConnections: [{ id: 987, bank: { name: "C24" }, updateStatus: "READY" }] });
+    if (url.pathname === "/api/v2/accounts") return Response.json({ accounts: [{ id: 77, currency: "EUR" }] });
+    if (url.pathname === "/api/v2/transactions") return Response.json({ transactions: Array.from({ length: 100 }, (_, index) => ({ id: String(index), accountId: 77, amount: 1, currency: "EUR", bankBookingDate: "2026-09-16" })), paging: { page: Number(url.searchParams.get("page")), perPage: 100, pageCount: 51, totalCount: 5001 } });
+    return Response.json({ error: "unexpected test route" }, { status: 500 });
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.test/v1/connections/987", {
+      headers: { Authorization: `Bearer ${"W".repeat(43)}`, "CF-Connecting-IP": "192.0.2.22" },
+    }), env as never, {} as never);
+    assert.equal(response.status, 502);
+    assert.deepEqual(await response.json(), { error: "Der Abruf der Umsätze hat das sichere Seitenlimit erreicht. Bitte erneut synchronisieren." });
   } finally {
     globalThis.fetch = originalFetch;
   }

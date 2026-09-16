@@ -47,6 +47,9 @@ internal val Canvas = Color(0xFFF7F8F5)
 internal val Muted = Color(0xFF78827D)
 
 class MainActivity : ComponentActivity() {
+    var resumeVersion by mutableIntStateOf(0)
+        private set
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent { KontoKlarApp() }
@@ -54,6 +57,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        resumeVersion++
         InvoiceReminderScheduler.reconcile(this, LocalData(this).invoices())
         TaxDeadlineReminderScheduler.reconcile(this, LocalData(this).taxDeadlines())
     }
@@ -74,6 +78,7 @@ private data class InvoiceLineInput(val description: String, val amount: String)
 @Composable
 private fun KontoKlarApp() {
     val context = LocalContext.current
+    val resumeVersion = (context as? MainActivity)?.resumeVersion ?: 0
     val store = remember { LocalData(context) }
     var invoices by remember { mutableStateOf(store.invoices()) }
     var invoicePayments by remember { mutableStateOf(store.invoicePayments()) }
@@ -211,7 +216,7 @@ private fun KontoKlarApp() {
     }
     LaunchedEffect(invoices) { InvoiceReminderScheduler.reconcile(context, invoices) }
     LaunchedEffect(taxDeadlines) { TaxDeadlineReminderScheduler.reconcile(context, taxDeadlines) }
-    LaunchedEffect(page, liveBanking.isConfigured) {
+    LaunchedEffect(page, liveBanking.isConfigured, resumeVersion) {
         if (page == Page.Banking && liveBanking.isConfigured) {
             bankingBusy = true
             runCatching {
@@ -304,7 +309,7 @@ private fun KontoKlarApp() {
                             runCatching {
                                 val session = withContext(Dispatchers.IO) { liveBanking.connect(institution.id) }
                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(session.authorizationUrl)))
-                                "Freigabe bei ${institution.name} geöffnet. Kehre danach hierher zurück und aktualisiere die Verbindungen."
+                                "Freigabe bei ${institution.name} geöffnet. Kehre danach hierher zurück – KontoKlar prüft die Verbindung automatisch."
                             }.onSuccess { bankingMessage = it }
                                 .onFailure { bankingMessage = it.message ?: "Bankverbindung konnte nicht gestartet werden." }
                             bankingBusy = false

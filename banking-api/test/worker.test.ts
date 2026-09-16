@@ -137,7 +137,13 @@ test("provisions an isolated provider user and returns only supported target ban
       const item = search === "C24" ? { id: 24001, name: "C24 Bank GmbH" }
         : search === "comdirect" ? { id: 28001, name: "comdirect – eine Marke der Commerzbank" }
           : { id: 35001, name: "Trade Republic Bank GmbH" };
-      return Response.json({ banks: [{ ...item, bankInterfaces: [{ isAisSupported: true }] }] });
+      return Response.json({ banks: [
+        // Access V2 may include a repository interface that is currently disabled.
+        { id: 999, name: `${search} unavailable`, bankInterfaces: [{ isAisSupported: false, aisCapabilities: { transactionsDownload: true } }] },
+        // A top-level legacy flag is not sufficient evidence in an Access V2 response.
+        { id: 998, name: `${search} legacy-only`, isAisSupported: true },
+        { ...item, bankInterfaces: [{ isAisSupported: true }] },
+      ] });
     }
     return Response.json({ error: "unexpected test route" }, { status: 500 });
   };

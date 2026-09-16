@@ -559,8 +559,10 @@ function isRecord(value: unknown): value is ProviderRow {
 
 function bankHasAis(bank: ProviderRow): boolean {
   const interfaces = Array.isArray(bank.bankInterfaces) ? bank.bankInterfaces.filter(isRecord) : [];
-  if (interfaces.length === 0) return bank.isAisSupported !== false;
-  return interfaces.some((item) => item.isAisSupported === true || (isRecord(item.aisCapabilities) && Object.values(item.aisCapabilities).some((capability) => capability === true)));
+  // Access V2 can return interfaces that exist in finAPI's repository but are
+  // currently disabled. Only the per-interface AIS flag is authoritative;
+  // capability flags or a missing interface list do not prove connectivity.
+  return interfaces.some((item) => item.isAisSupported === true);
 }
 
 function stringAt(row: ProviderRow, path: string[]): string {

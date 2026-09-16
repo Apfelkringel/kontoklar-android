@@ -18,6 +18,7 @@
             </intent-filter>
         </activity>
         <receiver android:name=".InvoiceReminderReceiver" android:enabled="true" android:exported="false" />
+        <receiver android:name=".TaxDeadlineReminderReceiver" android:enabled="true" android:exported="false" />
         <receiver android:name=".InvoiceReminderRebootReceiver" android:enabled="true" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

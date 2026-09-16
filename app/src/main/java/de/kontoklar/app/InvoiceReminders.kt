@@ -182,6 +182,8 @@ class InvoiceReminderReceiver : BroadcastReceiver() {
 class InvoiceReminderRebootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action !in setOf(Intent.ACTION_BOOT_COMPLETED, "android.intent.action.TIME_SET", "android.intent.action.TIMEZONE_CHANGED", Intent.ACTION_MY_PACKAGE_REPLACED)) return
-        InvoiceReminderScheduler.reconcile(context, LocalData(context).invoices(), forceSchedule = true)
+        val store = LocalData(context)
+        InvoiceReminderScheduler.reconcile(context, store.invoices(), forceSchedule = true)
+        TaxDeadlineReminderScheduler.reconcile(context, store.taxDeadlines(), forceSchedule = true)
     }
 }

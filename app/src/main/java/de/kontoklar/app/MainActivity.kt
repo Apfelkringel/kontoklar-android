@@ -55,6 +55,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         InvoiceReminderScheduler.reconcile(this, LocalData(this).invoices())
+        TaxDeadlineReminderScheduler.reconcile(this, LocalData(this).taxDeadlines())
     }
 }
 
@@ -193,10 +194,13 @@ private fun KontoKlarApp() {
             .onFailure { toast = it.message ?: "XML-Export fehlgeschlagen." }
     }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) InvoiceReminderScheduler.reconcile(context, store.invoices())
-        else toast = "Zahlungserinnerungen sind aus. Du kannst Mitteilungen später in den Android-Einstellungen erlauben."
+        if (granted) {
+            InvoiceReminderScheduler.reconcile(context, store.invoices())
+            TaxDeadlineReminderScheduler.reconcile(context, store.taxDeadlines())
+        } else toast = "Rechnungs- und Fristerinnerungen sind aus. Du kannst Mitteilungen später in den Android-Einstellungen erlauben."
     }
     LaunchedEffect(invoices) { InvoiceReminderScheduler.reconcile(context, invoices) }
+    LaunchedEffect(taxDeadlines) { TaxDeadlineReminderScheduler.reconcile(context, taxDeadlines) }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(toast) { toast?.let { snackbar.showSnackbar(it); toast = null } }
 
@@ -235,6 +239,9 @@ private fun KontoKlarApp() {
                 Page.Taxes -> TaxScreen(invoices = invoices, expenses = expenses, deadlines = taxDeadlines, onSaveDeadlines = { updated ->
                     taxDeadlines = updated
                     store.saveTaxDeadlines(updated)
+                    if (updated.any { !it.completed } && Build.VERSION.SDK_INT >= 33 &&
+                        androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     toast = "Fristenliste aktualisiert"
                 }, onAction = { action ->
                     when (action) {
@@ -797,7 +804,7 @@ private fun TaxScreen(invoices: List<Invoice>, expenses: List<Expense>, deadline
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Eigene Steuertermine", fontWeight = FontWeight.Bold, color = Ink, fontSize = 17.sp)
-                    Text("Von dir eingetragene Fristen · keine automatische Fristberechnung", color = Muted, fontSize = 11.sp)
+                    Text("Deine Fristen · Erinnerung am eingetragenen Fälligkeitstag um 09:00", color = Muted, fontSize = 11.sp)
                 }
                 IconButton(onClick = { deadlineTitle = ""; deadlineDate = LocalDate.now().plusMonths(1).toString(); deadlineNote = ""; deadlineError = null; deadlineDialog = true }) {
                     Icon(Icons.Default.Add, "Steuertermin hinzufügen", tint = Forest)
@@ -832,7 +839,7 @@ private fun TaxScreen(invoices: List<Invoice>, expenses: List<Expense>, deadline
                 OutlinedTextField(deadlineTitle, { deadlineTitle = it; deadlineError = null }, label = { Text("Bezeichnung") }, singleLine = true)
                 OutlinedTextField(deadlineDate, { deadlineDate = it; deadlineError = null }, label = { Text("Fälligkeit (JJJJ-MM-TT)") }, singleLine = true)
                 OutlinedTextField(deadlineNote, { deadlineNote = it }, label = { Text("Notiz (optional)") }, minLines = 2)
-                Text("Bitte Frist und Datum eigenständig prüfen. KontoKlar leitet keine gesetzlichen Termine ab und sendet dafür keine Benachrichtigungen.", color = Muted, fontSize = 11.sp)
+                Text("Bitte Frist und Datum eigenständig prüfen. KontoKlar leitet keine gesetzlichen Termine ab. Mit erlaubten Android-Mitteilungen gibt es am Fälligkeitstag um 09:00 eine Erinnerung.", color = Muted, fontSize = 11.sp)
                 deadlineError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
             }
         },

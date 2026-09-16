@@ -4,7 +4,7 @@
 
 Die Android-App spricht ausschließlich mit KontoKlars HTTPS-Backend. Im Backend liegt ein Cloudflare-Worker-Adapter für finAPI mit isoliertem Provider-Profil je Installation, serverseitiger Bankauswahl, gehostetem finAPI-Freigabefluss, Umsatznormalisierung, manueller Synchronisierung und Trennen einer Verbindung. D1 hält nur Installations-Hashes, Provider-Auftragsreferenzen und kurzlebige Rate-Limit-Zähler; Zugangsdaten und Umsätze werden dort nicht gespeichert. Umsätze werden auf dem Gerät gespeichert. finAPI- und Bankschlüssel gehören niemals in die APK, GitHub, Drive oder diesen Chat.
 
-Der Android-Client speichert einen zufälligen Installationsschlüssel in verschlüsselten App-Einstellungen und sendet ihn nur an die konfigurierte HTTPS-API. Ohne API-Basisadresse und korrekt eingerichtetes Backend bleiben Live-Verbindungen aus; lokaler CAMT.053-/CSV-/PDF-Import funktioniert unabhängig davon.
+Der Android-Client speichert einen zufälligen Installationsschlüssel in verschlüsselten App-Einstellungen und sendet ihn nur an die konfigurierte HTTPS-API. Ohne API-Basisadresse und korrekt eingerichtetes Backend bleiben Live-Verbindungen aus; lokaler CAMT.053-/CSV-/XLSX-/PDF-Import funktioniert unabhängig davon. Der C24-Excel-Import liest das erste Tabellenblatt lokal, begrenzt die Datei und akzeptiert nur erkannte Buchungsdatum-/Betragsspalten.
 
 ## Lokales Prüfen
 

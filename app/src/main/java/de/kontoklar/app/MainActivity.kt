@@ -380,7 +380,7 @@ private fun KontoKlarApp() {
                             bankingBusy = false
                         }
                     },
-                    onImportStatement = { bankStatementImportLauncher.launch(arrayOf("application/pdf", "application/xml", "text/xml", "application/camt.053+xml", "text/csv", "*/*")) },
+                    onImportStatement = { bankStatementImportLauncher.launch(arrayOf("application/pdf", "application/xml", "text/xml", "application/camt.053+xml", "text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "*/*")) },
                     onMatchInvoice = { transaction, invoice ->
                         if (transaction.amountCents > 0 && transaction.amountCents <= invoiceOutstandingCents(invoice) && invoice.status != "Entwurf") {
                             runCatching { store.recordInvoicePayment(invoice.id, transaction.amountCents, LocalDate.parse(transaction.date), "Kontoauszug", transaction.id) }

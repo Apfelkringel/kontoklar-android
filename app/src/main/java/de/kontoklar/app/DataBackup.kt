@@ -3,7 +3,6 @@ package de.kontoklar.app
 import android.content.Context
 import android.net.Uri
 import android.webkit.MimeTypeMap
-import androidx.core.content.FileProvider
 import org.json.JSONObject
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
@@ -46,7 +45,7 @@ fun exportBackup(context: Context, destination: Uri, store: LocalData, password:
         zip.closeEntry()
 
         for ((entryName, sourceUri) in attachments) {
-            val input = context.contentResolver.openInputStream(sourceUri)
+            val input = openReceiptInputStream(context, sourceUri)
                 ?: error("Ein angehängter Beleg ist nicht lesbar. Die Sicherung wurde nicht abgeschlossen.")
             zip.putNextEntry(ZipEntry(entryName))
             input.use { stream ->
@@ -125,13 +124,9 @@ fun restoreBackup(context: Context, source: Uri, store: LocalData, password: Cha
                 referencedAttachments += backupReceipt
                 val stagedFile = attachments[backupReceipt] ?: error("Ein Beleg fehlt in der Sicherung.")
                 val extension = backupReceipt.substringAfterLast('.')
-                val receiptDirectory = File(context.filesDir, "receipts").apply {
-                    check(isDirectory || mkdirs()) { "Belegspeicher ist nicht verfügbar." }
-                }
-                val restoredFile = File(receiptDirectory, "backup-${UUID.randomUUID()}.$extension")
-                stagedFile.copyTo(restoredFile, overwrite = false)
-                restoredReceiptFiles += restoredFile
-                expense.put("receiptUri", FileProvider.getUriForFile(context, "${context.packageName}.files", restoredFile).toString())
+                val encryptedReceiptUri = encryptReceiptFile(context, stagedFile, extension)
+                restoredReceiptFiles += File(context.filesDir, "receipts/${encryptedReceiptUri.lastPathSegment}")
+                expense.put("receiptUri", encryptedReceiptUri.toString())
             } else if (expense.optString("receiptUri").isNotBlank()) {
                 error("Ein Beleg wurde nicht mitgesichert. Die Sicherung wurde nicht wiederhergestellt.")
             }
@@ -147,6 +142,10 @@ fun restoreBackup(context: Context, source: Uri, store: LocalData, password: Cha
 }
 
 private fun receiptExtension(context: Context, uri: Uri): String {
+    if (isEncryptedReceipt(context, uri)) {
+        return uri.lastPathSegment.orEmpty().removeSuffix(".enc").substringAfterLast('.', "bin")
+            .lowercase().takeIf { it in setOf("jpg", "jpeg", "png", "webp", "pdf", "xml") } ?: "bin"
+    }
     val mime = context.contentResolver.getType(uri)
     val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)
         ?: uri.lastPathSegment?.substringAfterLast('.', "")

@@ -114,6 +114,21 @@ private fun KontoKlarApp() {
     var incomingInvoiceUri by remember { mutableStateOf<Uri?>(null) }
     var incomingInvoiceError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    LaunchedEffect(store) {
+        withContext(Dispatchers.IO) { cleanupReceiptWorkingCopies(context) }
+        val priorExpenses = expenses
+        val migrated = withContext(Dispatchers.IO) {
+            priorExpenses.map { expense ->
+                val rawUri = expense.receiptUri ?: return@map expense
+                runCatching { migrateLegacyReceipt(context, Uri.parse(rawUri)) }
+                    .getOrNull()?.toString()?.takeIf { it != rawUri }?.let { expense.copy(receiptUri = it) } ?: expense
+            }
+        }
+        if (migrated != priorExpenses) {
+            expenses = migrated
+            store.saveExpenses(migrated)
+        }
+    }
     val backupExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { destination ->
         if (destination != null) scope.launch {
             val password = backupPassword.toCharArray()
@@ -524,7 +539,7 @@ private fun KontoKlarApp() {
                 onDelete = { expenseToDelete = expense; selectedExpense = null },
                 onOpenReceipt = {
                     runCatching {
-                        val uri = Uri.parse(expense.receiptUri)
+                        val uri = decryptedReceiptForViewing(context, Uri.parse(expense.receiptUri))
                         val mimeType = context.contentResolver.getType(uri) ?: if (uri.lastPathSegment?.endsWith(".pdf", true) == true) "application/pdf" else "image/*"
                         context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
                     }.onFailure { toast = "Beleg kann nicht geöffnet werden. Bitte prüfe, ob die Quelldatei noch vorhanden ist." }
@@ -554,7 +569,10 @@ private fun KontoKlarApp() {
                 onConfirm = {
                     val source = incomingInvoiceUri
                     if (source == null) toast = "Die Originaldatei ist nicht mehr verfügbar. Bitte importiere sie erneut."
-                    else {
+                    else scope.launch {
+                        runCatching { withContext(Dispatchers.IO) { encryptReceipt(context, source) } }
+                            .onFailure { toast = it.message ?: "Die E-Rechnung konnte nicht sicher gespeichert werden." }
+                            .onSuccess { secureReceipt ->
                         val imported = Expense(
                             merchant = parsed.supplier,
                             category = "Sonstiges",
@@ -565,7 +583,7 @@ private fun KontoKlarApp() {
                                 append("E-Rechnung ${parsed.invoiceNumber}")
                                 parsed.vatCents?.let { append(" · USt ${formatEuro(it)}") }
                             },
-                            receiptUri = source.toString()
+                            receiptUri = secureReceipt.toString()
                         )
                         expenses = expenses.upsertExpense(imported)
                         store.saveExpenses(expenses)
@@ -574,6 +592,7 @@ private fun KontoKlarApp() {
                         page = Page.Expenses
                         selectedExpense = imported
                         toast = "E-Rechnung geprüft und als Ausgabe übernommen"
+                            }
                     }
                 }
             )
@@ -1174,6 +1193,8 @@ private fun ActionDialog(
     val isExpense = title.contains("Beleg", true) || title.contains("Ausgabe", true)
     val isProfile = title == "Unternehmensprofil"
     val context = LocalContext.current
+    val saveScope = rememberCoroutineScope()
+    var isSavingExpense by remember { mutableStateOf(false) }
     val documentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
@@ -1320,7 +1341,7 @@ private fun ActionDialog(
                     }
                     OutlinedButton(onClick = {
                         runCatching {
-                            val directory = File(context.filesDir, "receipts").apply { mkdirs() }
+                            val directory = File(context.cacheDir, "receipt-capture").apply { mkdirs() }
                             val imageFile = File(directory, "receipt-${System.currentTimeMillis()}.jpg")
                             val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", imageFile)
                             cameraOutputUri = uri
@@ -1374,13 +1395,22 @@ private fun ActionDialog(
                             vatRatePercent = existingInvoice?.vatRatePercent ?: profile.vatRatePercent
                         )
                     )
-                    isExpense -> onCreateExpense(
-                        existingExpense?.copy(merchant = merchant.trim(), category = category, amountCents = expenseTotalCents, date = expenseDate, note = note.trim(), receiptUri = receiptUri, inputVatCents = parsedInputVat)
+                    isExpense -> {
+                        val draft = existingExpense?.copy(merchant = merchant.trim(), category = category, amountCents = expenseTotalCents, date = expenseDate, note = note.trim(), receiptUri = receiptUri, inputVatCents = parsedInputVat)
                             ?: Expense(merchant = merchant.trim(), category = category, amountCents = expenseTotalCents, date = expenseDate, note = note.trim(), receiptUri = receiptUri, inputVatCents = parsedInputVat)
-                    )
+                        val source = receiptUri?.let { Uri.parse(it) }
+                        isSavingExpense = true
+                        saveScope.launch {
+                            runCatching {
+                                source?.let { withContext(Dispatchers.IO) { encryptReceipt(context, it) } }?.toString()
+                            }.onSuccess { safeUri -> onCreateExpense(draft.copy(receiptUri = safeUri)) }
+                                .onFailure { error = it.message ?: "Der Beleg konnte nicht verschlüsselt gespeichert werden." }
+                            isSavingExpense = false
+                        }
+                    }
                     else -> onSave("$title geöffnet")
                 }
-        }) { Text(if (isProfile) "Profil speichern" else if (isInvoice && existingInvoice != null) "Änderungen speichern" else if (isInvoice) "Entwurf speichern" else if (isExpense && existingExpense != null) "Änderungen speichern" else if (isExpense) "Ausgabe speichern" else "Weiter", color = Forest) }
+        }, enabled = !isSavingExpense) { Text(if (isSavingExpense) "Beleg wird sicher gespeichert …" else if (isProfile) "Profil speichern" else if (isInvoice && existingInvoice != null) "Änderungen speichern" else if (isInvoice) "Entwurf speichern" else if (isExpense && existingExpense != null) "Änderungen speichern" else if (isExpense) "Ausgabe speichern" else "Weiter", color = Forest) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen", color = Muted) } },
         containerColor = Color.White

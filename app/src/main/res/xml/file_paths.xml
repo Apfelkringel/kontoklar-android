@@ -1,6 +1,8 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="update_apks" path="updates/" />
     <cache-path name="bookkeeping_exports" path="exports/" />
+    <cache-path name="receipt_working_copies" path="receipt-previews/" />
+    <cache-path name="receipt_camera_capture" path="receipt-capture/" />
     <files-path name="invoice_pdfs" path="invoices/" />
     <files-path name="receipt_images" path="receipts/" />
 </paths>

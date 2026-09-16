@@ -13,7 +13,6 @@ import javax.crypto.spec.GCMParameterSpec
 
 internal class SecureLocalPreferences(context: Context) {
     private val preferences = context.getSharedPreferences("kontoklar_data_v1", Context.MODE_PRIVATE)
-    private val keyStore = AndroidKeyStoreSecret()
 
     init {
         migratePlaintext()
@@ -22,19 +21,19 @@ internal class SecureLocalPreferences(context: Context) {
     fun getString(key: String, defaultValue: String? = null): String? {
         val value = preferences.getString(key, null) ?: return defaultValue
         return if (value.startsWith(ENCRYPTED_PREFIX)) {
-            runCatching { AesGcmValueCodec.decrypt(value.removePrefix(ENCRYPTED_PREFIX), keyStore.key()) }
+            runCatching { AesGcmValueCodec.decrypt(value.removePrefix(ENCRYPTED_PREFIX), LocalDataEncryptionKey.key()) }
                 .getOrElse { throw IllegalStateException("Lokale Daten konnten nicht entschlüsselt werden.", it) }
         } else value
     }
 
     fun putString(key: String, value: String, commit: Boolean = false): Boolean {
-        val encrypted = ENCRYPTED_PREFIX + AesGcmValueCodec.encrypt(value, keyStore.key())
+        val encrypted = ENCRYPTED_PREFIX + AesGcmValueCodec.encrypt(value, LocalDataEncryptionKey.key())
         val editor = preferences.edit().putString(key, encrypted)
         return if (commit) editor.commit() else { editor.apply(); true }
     }
 
     fun putStrings(values: Map<String, String>): Boolean {
-        val key = keyStore.key()
+        val key = LocalDataEncryptionKey.key()
         val encrypted = values.mapValues { (_, value) -> ENCRYPTED_PREFIX + AesGcmValueCodec.encrypt(value, key) }
         val editor = preferences.edit()
         encrypted.forEach { (name, value) -> editor.putString(name, value) }
@@ -50,25 +49,26 @@ internal class SecureLocalPreferences(context: Context) {
         }
     }
 
-    private class AndroidKeyStoreSecret {
-        fun key(): SecretKey {
-            val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-            (store.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
-            val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-            generator.init(
-                KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                    .setKeySize(256)
-                    .build()
-            )
-            return generator.generateKey()
-        }
-    }
-
     private companion object {
-        const val KEY_ALIAS = "kontoklar_local_data_aes_v1"
         const val ENCRYPTED_PREFIX = "KKENC1:"
+    }
+}
+
+internal object LocalDataEncryptionKey {
+    private const val KEY_ALIAS = "kontoklar_local_data_aes_v1"
+
+    @Synchronized fun key(): SecretKey {
+        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (store.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
+        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        generator.init(
+            KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build()
+        )
+        return generator.generateKey()
     }
 }
 

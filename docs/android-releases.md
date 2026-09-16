@@ -20,6 +20,8 @@ Aktueller Release-Zertifikat-Fingerprint (SHA-256): `5F:7E:4A:B0:E8:07:51:A5:E9:
 
 Der Tag-Workflow testet die App, erstellt ein signiertes Release-APK und veröffentlicht es als GitHub Release. Tags müssen einmalig und aufsteigend sein; Android akzeptiert keine gleich alte oder niedrigere `versionCode`.
 
+Die nicht geheime Repository-Variable `KONTOKLAR_BANKING_API_BASE_URL` wird in den Release-Build übernommen. Solange kein produktionsfreigegebener Open-Banking-Worker existiert, darf sie leer bleiben; Live-Banking ist dann in der App deaktiviert. Die Variable enthält ausschließlich die HTTPS-Adresse, keine finAPI-Credentials.
+
 ## Release auslösen
 
 1. `versionCode` erhöhen und `versionName` setzen.

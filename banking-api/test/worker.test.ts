@@ -262,7 +262,9 @@ test("creates a provider-hosted bank consent and normalizes linked EUR transacti
     if (url.pathname === "/api/webForms/bankConnectionImport") {
       const payload = JSON.parse(String(init?.body));
       assert.equal(payload.bank.id, 24001);
-      assert.deepEqual(payload.accountTypes, ["CHECKING", "SECURITY"]);
+      assert.deepEqual(payload.accountTypes, ["CHECKING"]);
+      assert.equal(payload.skipBalancesDownload, true);
+      assert.equal(payload.skipPositionsDownload, true);
       return Response.json({ id: "session-1", url: "https://webform-sandbox.finapi.io/wf/session-1" }, { status: 201 });
     }
     if (url.pathname === "/api/v2/bankConnections") {

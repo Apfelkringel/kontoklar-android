@@ -57,10 +57,12 @@ export default {
           {
             bank: { id: Number(bankId) },
             bankConnectionName: `KontoKlar – ${bank.name}`,
-            accountTypes: ["CHECKING", "SECURITY"],
+            // KontoKlar currently imports payment-account transactions only. Requesting SECURITY
+            // would add another provider workflow without any holdings UI or persistence.
+            accountTypes: ["CHECKING"],
             maxDaysForDownload: 90,
-            skipBalancesDownload: false,
-            skipPositionsDownload: false,
+            skipBalancesDownload: true,
+            skipPositionsDownload: true,
             loadOwnerData: false,
           },
         );

@@ -181,6 +181,7 @@ class LocalData(context: Context) {
         .put("bankTransactions", storedArray("bank_transactions"))
         .put("customers", storedArray("customers"))
         .put("products", storedArray("products"))
+        .put("taxDeadlines", storedArray("tax_deadlines"))
 
     fun restoreSnapshot(snapshot: JSONObject) {
         require(snapshot.optInt("schemaVersion") == 1) { "Diese Sicherungsversion wird nicht unterstützt." }
@@ -190,6 +191,7 @@ class LocalData(context: Context) {
         val importedBankTransactions = decodeArray(snapshot.optJSONArray("bankTransactions") ?: JSONArray(), ::bankTransactionFromJson)
         val importedCustomers = decodeArray(snapshot.getJSONArray("customers"), ::customerFromJson)
         val importedProducts = decodeArray(snapshot.optJSONArray("products") ?: JSONArray(), ::productFromJson)
+        val importedTaxDeadlines = decodeArray(snapshot.optJSONArray("taxDeadlines") ?: JSONArray(), ::taxDeadlineFromJson)
         val importedProfile = businessProfileFromJson(snapshot.getJSONObject("businessProfile"))
         require(importedInvoices.all { it.amountCents > 0 && it.customer.isNotBlank() && it.description.isNotBlank() && it.paidCents in 0..it.amountCents }) { "Die Sicherung enthält ungültige Rechnungen oder Zahlungsstände." }
         require(importedInvoices.all { it.vatRatePercent == null || it.vatRatePercent in 0..27 }) { "Die Sicherung enthält einen ungültigen Umsatzsteuersatz für eine Rechnung." }
@@ -200,12 +202,14 @@ class LocalData(context: Context) {
         require(importedBankTransactions.all { it.amountCents != 0L && validIsoDate(it.date) && it.id.matches(Regex("[a-f0-9]{64}")) }) { "Die Sicherung enthält ungültige Bankumsätze." }
         require(importedCustomers.all { it.name.isNotBlank() }) { "Die Sicherung enthält ungültige Kundendaten." }
         require(importedProducts.all { it.name.isNotBlank() && it.unitPriceCents > 0 }) { "Die Sicherung enthält ungültige Produkte oder Dienstleistungen." }
+        require(importedTaxDeadlines.all { it.id.isNotBlank() && it.title.isNotBlank() && it.title.length <= 120 && it.note.length <= 500 && validIsoDate(it.dueDate) }) { "Die Sicherung enthält ungültige Steuertermine." }
         require(importedInvoices.map { it.id }.distinct().size == importedInvoices.size && importedInvoices.all { validIsoDate(it.date) && validIsoDate(it.serviceDate) && validIsoDate(it.dueDate) }) { "Die Sicherung enthält doppelte Rechnungen oder ungültige Rechnungsdaten." }
         require(importedOffers.map { it.id }.distinct().size == importedOffers.size && importedOffers.all { validIsoDate(it.date) && validIsoDate(it.validUntil) }) { "Die Sicherung enthält doppelte Angebote oder ungültige Angebotsdaten." }
         require(importedExpenses.map { it.id }.distinct().size == importedExpenses.size && importedExpenses.all { validIsoDate(it.date) }) { "Die Sicherung enthält doppelte Ausgaben oder ungültige Ausgabedaten." }
         require(importedBankTransactions.map { it.id }.distinct().size == importedBankTransactions.size) { "Die Sicherung enthält doppelte Bankumsätze." }
         require(importedCustomers.map { it.id }.distinct().size == importedCustomers.size) { "Die Sicherung enthält doppelte Kunden." }
         require(importedProducts.map { it.id }.distinct().size == importedProducts.size) { "Die Sicherung enthält doppelte Produkte." }
+        require(importedTaxDeadlines.map { it.id }.distinct().size == importedTaxDeadlines.size) { "Die Sicherung enthält doppelte Steuertermine." }
 
         check(prefs.edit()
             .putString("invoices", snapshot.getJSONArray("invoices").toString())
@@ -214,6 +218,7 @@ class LocalData(context: Context) {
             .putString("bank_transactions", (snapshot.optJSONArray("bankTransactions") ?: JSONArray()).toString())
             .putString("customers", snapshot.getJSONArray("customers").toString())
             .putString("products", (snapshot.optJSONArray("products") ?: JSONArray()).toString())
+            .putString("tax_deadlines", (snapshot.optJSONArray("taxDeadlines") ?: JSONArray()).toString())
             .putString("business_profile", businessProfileJson(importedProfile).toString())
             .commit()) { "Die wiederhergestellten Daten konnten nicht dauerhaft gespeichert werden." }
     }
@@ -274,6 +279,11 @@ class LocalData(context: Context) {
         description = it.optString("description"), unitPriceCents = it.optLong("unitPriceCents")
     )
 
+    private fun taxDeadlineFromJson(it: JSONObject) = TaxDeadline(
+        id = it.optString("id", UUID.randomUUID().toString()), title = it.optString("title"),
+        dueDate = it.optString("dueDate"), note = it.optString("note"), completed = it.optBoolean("completed")
+    )
+
     fun invoices(): List<Invoice> = read("invoices", ::invoiceFromJson)
 
     fun offers(): List<Offer> = read("offers", ::offerFromJson)
@@ -289,6 +299,8 @@ class LocalData(context: Context) {
     fun saveCustomers(values: List<Customer>) = write("customers", values.map { JSONObject().put("id", it.id).put("name", it.name).put("email", it.email).put("street", it.street).put("postalCode", it.postalCode).put("city", it.city).put("taxNumber", it.taxNumber) })
     fun products(): List<Product> = read("products", ::productFromJson)
     fun saveProducts(values: List<Product>) = write("products", values.map { JSONObject().put("id", it.id).put("name", it.name).put("description", it.description).put("unitPriceCents", it.unitPriceCents) })
+    fun taxDeadlines(): List<TaxDeadline> = read("tax_deadlines", ::taxDeadlineFromJson)
+    fun saveTaxDeadlines(values: List<TaxDeadline>) = write("tax_deadlines", values.map { JSONObject().put("id", it.id).put("title", it.title).put("dueDate", it.dueDate).put("note", it.note).put("completed", it.completed) })
 
     fun businessProfile(): BusinessProfile {
         val json = prefs.getString("business_profile", null)?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return BusinessProfile()

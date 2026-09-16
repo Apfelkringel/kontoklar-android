@@ -80,6 +80,7 @@ private fun KontoKlarApp() {
     var customers by remember { mutableStateOf(store.customers()) }
     var offers by remember { mutableStateOf(store.offers()) }
     var products by remember { mutableStateOf(store.products()) }
+    var taxDeadlines by remember { mutableStateOf(store.taxDeadlines()) }
     var profile by remember { mutableStateOf(store.businessProfile()) }
     var selectedInvoice by remember { mutableStateOf<Invoice?>(null) }
     var invoiceToEdit by remember { mutableStateOf<Invoice?>(null) }
@@ -206,14 +207,18 @@ private fun KontoKlarApp() {
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            Header(page.title)
+            Header(page.title, profile)
             when (page) {
                 Page.Home -> Dashboard(invoices, expenses, bankTransactions, onNavigate = { page = it })
                 Page.Invoices -> InvoiceScreen(invoices, onAction = { dialog = it }, onSelect = { selectedInvoice = it })
                 Page.Expenses -> ExpenseScreen(expenses, onAction = { action ->
                     if (action == "E-Rechnung empfangen") incomingInvoiceLauncher.launch(arrayOf("*/*")) else dialog = action
                 }, onSelect = { selectedExpense = it })
-                Page.Taxes -> TaxScreen(invoices = invoices, expenses = expenses, onAction = { action ->
+                Page.Taxes -> TaxScreen(invoices = invoices, expenses = expenses, deadlines = taxDeadlines, onSaveDeadlines = { updated ->
+                    taxDeadlines = updated
+                    store.saveTaxDeadlines(updated)
+                    toast = "Fristenliste aktualisiert"
+                }, onAction = { action ->
                     when (action) {
                         "Steuerberater teilen" -> runCatching { shareBookkeepingCsv(context, invoices, expenses, bankTransactions) }
                             .onFailure { toast = it.message ?: "Export konnte nicht erstellt werden." }
@@ -221,7 +226,7 @@ private fun KontoKlarApp() {
                         else -> dialog = action
                     }
                 })
-                Page.More -> MoreScreen(onAction = { action ->
+                Page.More -> MoreScreen(profile = profile, onAction = { action ->
                     if (action == "Einstellungen" || action == "Unternehmensprofil") dialog = "Unternehmensprofil"
                     else if (action == "Bankkonten & Accountable Banking") page = Page.Banking
                     else if (action == "Kunden") customersOpen = true
@@ -378,6 +383,7 @@ private fun KontoKlarApp() {
                                 customers = store.customers()
                                 offers = store.offers()
                                 products = store.products()
+                                taxDeadlines = store.taxDeadlines()
                                 profile = store.businessProfile()
                                 toast = "Sicherung erfolgreich wiederhergestellt"
                             }.onFailure { toast = it.message ?: "Sicherung konnte nicht wiederhergestellt werden." }
@@ -580,14 +586,15 @@ private fun KontoKlarApp() {
 }
 
 @Composable
-private fun Header(title: String) {
+private fun Header(title: String, profile: BusinessProfile) {
+    val displayName = profile.contactName.ifBlank { profile.businessName }.ifBlank { "KontoKlar" }
     Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 20.dp, vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("Guten Morgen, Alex", color = Muted, fontSize = 12.sp)
+            Text("Willkommen, $displayName", color = Muted, fontSize = 12.sp, maxLines = 1)
             Text(title, color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         }
         Box(Modifier.size(42.dp).background(Mint, CircleShape).clickable {}, contentAlignment = Alignment.Center) {
-            Text("A", color = Forest, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text(displayName.first().uppercase(), color = Forest, fontWeight = FontWeight.Bold, fontSize = 18.sp)
         }
     }
 }
@@ -679,8 +686,13 @@ private fun ExpenseScreen(expenses: List<Expense>, onAction: (String) -> Unit, o
 }
 
 @Composable
-private fun TaxScreen(invoices: List<Invoice>, expenses: List<Expense>, onAction: (String) -> Unit) {
+private fun TaxScreen(invoices: List<Invoice>, expenses: List<Expense>, deadlines: List<TaxDeadline>, onSaveDeadlines: (List<TaxDeadline>) -> Unit, onAction: (String) -> Unit) {
     var selectedYear by remember { mutableIntStateOf(LocalDate.now().year) }
+    var deadlineDialog by remember { mutableStateOf(false) }
+    var deadlineTitle by remember { mutableStateOf("") }
+    var deadlineDate by remember { mutableStateOf(LocalDate.now().plusMonths(1).toString()) }
+    var deadlineNote by remember { mutableStateOf("") }
+    var deadlineError by remember { mutableStateOf<String?>(null) }
     val report = remember(selectedYear, invoices, expenses) { taxYearReport(selectedYear, invoices, expenses) }
     LazyColumn(contentPadding = PaddingValues(18.dp, 14.dp, 18.dp, 90.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
@@ -724,17 +736,72 @@ private fun TaxScreen(invoices: List<Invoice>, expenses: List<Expense>, onAction
             }
         }
         item { Text("Weitere Werkzeuge", fontWeight = FontWeight.Bold, color = Ink, fontSize = 18.sp) }
-        item { TaskRow("Steuerprofil vervollständigen", "Tätigkeit, Rechtsform und Umsatzsteuer", "Einrichten", Icons.Default.Tune, onClick = { onAction("Steuerprofil") }) }
-        item { TaskRow("Steuertermine verbinden", "Fristen hängen von deinen Angaben ab", "Einrichten", Icons.Default.Event, onClick = { onAction("Steuertermine") }) }
+        item { TaskRow("Absender- und Steuerdaten", "Name, Adresse, Steuernummer und Umsatzsteuer", "Profil öffnen", Icons.Default.Tune, onClick = { onAction("Steuerprofil") }) }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Eigene Steuertermine", fontWeight = FontWeight.Bold, color = Ink, fontSize = 17.sp)
+                    Text("Von dir eingetragene Fristen · keine automatische Fristberechnung", color = Muted, fontSize = 11.sp)
+                }
+                IconButton(onClick = { deadlineTitle = ""; deadlineDate = LocalDate.now().plusMonths(1).toString(); deadlineNote = ""; deadlineError = null; deadlineDialog = true }) {
+                    Icon(Icons.Default.Add, "Steuertermin hinzufügen", tint = Forest)
+                }
+            }
+        }
+        if (deadlines.isEmpty()) item { EmptyState("Noch keine Termine", "Trage selbst eine Frist und das von dir geprüfte Fälligkeitsdatum ein.") }
+        items(deadlines.sortedWith(compareBy<TaxDeadline> { it.completed }.thenBy { it.dueDate }), key = TaxDeadline::id) { deadline ->
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp)) {
+                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(deadline.title, color = Ink, fontWeight = FontWeight.SemiBold)
+                        Text("${deadline.dueDate} · ${taxDeadlineStatus(deadline)}", color = if (taxDeadlineStatus(deadline) == "Überfällig") Color(0xFF9B3D24) else Muted, fontSize = 12.sp)
+                        if (deadline.note.isNotBlank()) Text(deadline.note, color = Muted, fontSize = 11.sp)
+                    }
+                    if (!deadline.completed) IconButton(onClick = { onSaveDeadlines(deadlines.map { if (it.id == deadline.id) it.copy(completed = true) else it }) }) {
+                        Icon(Icons.Default.CheckCircleOutline, "Als erledigt markieren", tint = Forest)
+                    }
+                    IconButton(onClick = { onSaveDeadlines(deadlines.filterNot { it.id == deadline.id }) }) {
+                        Icon(Icons.Default.DeleteOutline, "Termin löschen", tint = Muted)
+                    }
+                }
+            }
+        }
         item { OutlinedButton(onClick = { onAction("Steuerberater teilen") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Share, null); Spacer(Modifier.width(8.dp)); Text("Mit Steuerberater teilen") } }
     }
+    if (deadlineDialog) AlertDialog(
+        onDismissRequest = { deadlineDialog = false },
+        title = { Text("Eigene Steuerfrist eintragen") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(deadlineTitle, { deadlineTitle = it; deadlineError = null }, label = { Text("Bezeichnung") }, singleLine = true)
+                OutlinedTextField(deadlineDate, { deadlineDate = it; deadlineError = null }, label = { Text("Fälligkeit (JJJJ-MM-TT)") }, singleLine = true)
+                OutlinedTextField(deadlineNote, { deadlineNote = it }, label = { Text("Notiz (optional)") }, minLines = 2)
+                Text("Bitte Frist und Datum eigenständig prüfen. KontoKlar leitet keine gesetzlichen Termine ab und sendet dafür keine Benachrichtigungen.", color = Muted, fontSize = 11.sp)
+                deadlineError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                when {
+                    deadlineTitle.isBlank() -> deadlineError = "Bitte gib eine Bezeichnung ein."
+                    deadlineTitle.length > 120 || deadlineNote.length > 500 -> deadlineError = "Bezeichnung max. 120 und Notiz max. 500 Zeichen."
+                    runCatching { LocalDate.parse(deadlineDate) }.isFailure -> deadlineError = "Bitte gib ein gültiges Datum im Format JJJJ-MM-TT ein."
+                    else -> {
+                        onSaveDeadlines(deadlines + TaxDeadline(title = deadlineTitle.trim(), dueDate = deadlineDate, note = deadlineNote.trim()))
+                        deadlineDialog = false
+                    }
+                }
+            }) { Text("Termin speichern", color = Forest) }
+        },
+        dismissButton = { TextButton(onClick = { deadlineDialog = false }) { Text("Abbrechen") } }
+    )
 }
 
 @Composable
-private fun MoreScreen(onAction: (String) -> Unit) {
+private fun MoreScreen(profile: BusinessProfile, onAction: (String) -> Unit) {
     val links = listOf("Bankkonten & Accountable Banking" to Icons.Default.AccountBalanceWallet, "Kunden" to Icons.Default.People, "Angebote" to Icons.Default.RequestQuote, "Produkte & Dienstleistungen" to Icons.Default.Inventory2, "Dokumente" to Icons.Default.Folder, "Steuer-Assistent" to Icons.Default.AutoAwesome, "Mit Buchhalter teilen" to Icons.Default.Share, "Einstellungen" to Icons.Default.Settings, "Hilfe & Support" to Icons.Default.HelpOutline)
     LazyColumn(contentPadding = PaddingValues(18.dp, 14.dp, 18.dp, 90.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(18.dp)) { Text("Alex Beispiel", fontWeight = FontWeight.Bold, color = Ink, fontSize = 18.sp); Text("Freiberufler · KontoKlar Plus", color = Muted, fontSize = 13.sp) } } }
+        item { Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(18.dp)) { Text(profile.businessName.ifBlank { profile.contactName }.ifBlank { "Unternehmensprofil" }, fontWeight = FontWeight.Bold, color = Ink, fontSize = 18.sp); Text(if (profile.businessName.isBlank() && profile.contactName.isBlank()) "Noch nicht eingerichtet · Daten bleiben lokal" else listOf(profile.street, listOf(profile.postalCode, profile.city).filter(String::isNotBlank).joinToString(" ")).filter(String::isNotBlank).joinToString(" · ").ifBlank { "Lokale Unternehmensdaten" }, color = Muted, fontSize = 13.sp) } } }
         item { AppUpdateCard() }
         items(links) { (label, icon) -> Row(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(14.dp)).clickable { onAction(label) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(icon, null, tint = Forest); Spacer(Modifier.width(14.dp)); Text(label, color = Ink, modifier = Modifier.weight(1f)); Icon(Icons.Default.ChevronRight, null, tint = Muted) } }
     }

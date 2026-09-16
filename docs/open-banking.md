@@ -42,6 +42,8 @@ Verbindungen laufen über das gehostete finAPI-Webformular; KontoKlar fragt niem
 
 Ein Sandbox-Zugang dient der Entwicklung und ist kein Live-Bankzugang. finAPI nennt auf der aktuellen Preisseite für Access B2C eine Grundgebühr von 60 €/Monat bis 200 Nutzer, für Access B2X 100 €/Monat, und für „Access für Eigenanwender“ (höchstens 10 eigene Konten) 200 €/Monat; PSD2-Lizenzkosten können für Nicht-Eigenanwender hinzukommen. finAPI weist bei der Bestellung auf eine anfängliche Vertragslaufzeit von 24 Monaten hin. Die Bestellung erfordert geschäftliche Kontaktdaten und eine Identitätsprüfung. Deshalb werden weder ein Produktionsvertrag abgeschlossen noch kostenpflichtige Zugänge oder Live-Credentials ohne separate ausdrückliche Entscheidung eingerichtet. Preise und Vertragsbedingungen vor einer Entscheidung direkt beim Anbieter prüfen.
 
+Für eine rein private App-Nutzung ausschließlich mit eigenen Konten ist Enable Banking eine mögliche, noch nicht implementierte Alternative: Der Anbieter dokumentiert eine kostenlose eingeschränkte Produktionsnutzung für private Eigenkonten, nachdem jedes Konto im Anbieterportal verknüpft wurde. Der Modus gibt ausschließlich genau diese freigegebenen Konten zurück und ist nicht für Geschäftskonten, fremde Konten oder öffentliche/kommerzielle App-Nutzung bestimmt. Die Abdeckung ist für KontoKlar noch nicht ausreichend verifiziert: Enable Banking nennt Trade Republic, weist dort aber (Stand August 2026) nur Betrag, Währung und Buchungsdatum als verfügbare Transaktionsdaten aus; comdirect wurde in Anbieter-Änderungsnotizen erwähnt, C24 konnte ich in den offiziellen Unterlagen nicht bestätigen. Diese Alternative ersetzt deshalb weder die implementierte finAPI-Integration noch eine Prüfung der drei konkreten Zugänge.
+
 Vor einer echten Veröffentlichung zusätzlich erforderlich: Anbieterfreigabe und Produktionszugang, tatsächlicher Test mit C24/comdirect/Trade Republic, rechtliche/PSD2-Rollenprüfung, Datenschutzhinweise und Auftragsverarbeitungsvertrag, Lösch-/Widerrufsprozess, Sicherheitsprüfung und Update-Signatur/Release-Prozess. Bis diese Punkte vorliegen, ist die Verbindung eine implementierte, aber nicht produktionsfreigegebene Integration.
 
 ## Datenschutz
@@ -60,3 +62,6 @@ Ein Kontoauszug enthält typischerweise IBAN, Name, Adresse, Salden und detailli
 * [finAPI: weitere Kontotypen bei der Web-Form-Verbindung anfordern](https://documentation.finapi.io/access/import-a-new-bank-connection-with-web-form-2-0-rec)
 * [finAPI aktuelle Produktpreise und Vertragsbedingungen](https://www.finapi.io/preise/)
 * [Finanzguru: XS2A für Girokonten und FinTS für weitere Kontotypen](https://hilfe.finanzguru.de/de/articles/1558594)
+* [Enable Banking: eingeschränkter Produktionszugang für eigene Konten](https://enablebanking.com/docs/api/linked-accounts)
+* [Enable Banking: Nutzungsbeschränkungen und Preise](https://enablebanking.com/terms/)
+* [Enable Banking Deutschland: Trade-Republic-Datenumfang](https://enablebanking.com/docs/markets/de/)

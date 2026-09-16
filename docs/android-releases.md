@@ -24,10 +24,10 @@ Die nicht geheime Repository-Variable `KONTOKLAR_BANKING_API_BASE_URL` wird in d
 
 ## Release auslösen
 
-1. `versionCode` erhöhen und `versionName` setzen.
+1. `versionCode` erhöhen und `versionName` setzen. Der nächste vorbereitete Release ist `versionCode 41` / `versionName 0.41.0`.
 2. `./gradlew testDebugUnitTest assembleDebug` erfolgreich ausführen.
 3. Den gewünschten Quellstand committen und pushen.
-4. Einen neuen Tag erstellen und pushen, zum Beispiel `v0.40.0`.
+4. Einen neuen Tag erstellen und pushen, zum Beispiel `v0.41.0`.
 5. GitHub Actions und die Asset-Prüfsumme kontrollieren. Erst danach erscheint das Update in der App.
 
 `assembleRelease` bricht absichtlich ab, wenn die Release-Secrets fehlen. Debug-Builds benötigen den Release-Schlüssel nicht.

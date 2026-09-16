@@ -49,10 +49,16 @@ class BankStatementCsvTest {
     @Test fun importsC24StyleXlsxWithSharedStringsAndExcelDateSerials() {
         val workbook = ByteArrayOutputStream()
         ZipOutputStream(workbook).use { zip ->
+            zip.putNextEntry(ZipEntry("xl/workbook.xml"))
+            zip.write("""<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Transactions" sheetId="1" r:id="rId9"/></sheets></workbook>""".toByteArray())
+            zip.closeEntry()
+            zip.putNextEntry(ZipEntry("xl/_rels/workbook.xml.rels"))
+            zip.write("""<Relationships><Relationship Id="rId9" Target="worksheets/export.xml"/></Relationships>""".toByteArray())
+            zip.closeEntry()
             zip.putNextEntry(ZipEntry("xl/sharedStrings.xml"))
             zip.write("""<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>Buchungsdatum</t></si><si><t>Betrag</t></si><si><t>Zahlungsempfänger</t></si><si><t>Verwendungszweck</t></si><si><t>15.09.2026</t></si><si><t>Lieferant GmbH</t></si><si><t>Rechnung 42</t></si></sst>""".toByteArray())
             zip.closeEntry()
-            zip.putNextEntry(ZipEntry("xl/worksheets/sheet1.xml"))
+            zip.putNextEntry(ZipEntry("xl/worksheets/export.xml"))
             zip.write("""<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="s"><v>2</v></c><c r="D1" t="s"><v>3</v></c></row><row r="2"><c r="A2"><v>46280</v></c><c r="B2"><v>-1234.56</v></c><c r="C2" t="s"><v>5</v></c><c r="D2" t="s"><v>6</v></c></row></sheetData></worksheet>""".toByteArray())
             zip.closeEntry()
         }

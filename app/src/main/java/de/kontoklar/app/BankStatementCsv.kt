@@ -42,7 +42,9 @@ fun parseBankStatementXlsx(input: InputStream): ParsedBankStatement {
         while (true) {
             val entry = zip.nextEntry ?: break
             if (!entry.isDirectory) {
-                val keepContent = entry.name in setOf("xl/sharedStrings.xml", "xl/worksheets/sheet1.xml")
+                val keepContent = entry.name in setOf(
+                    "xl/sharedStrings.xml", "xl/workbook.xml", "xl/_rels/workbook.xml.rels", "xl/worksheets/sheet1.xml"
+                ) || (entry.name.startsWith("xl/worksheets/") && entry.name.endsWith(".xml"))
                 val content = if (keepContent) ByteArrayOutputStream() else null
                 val buffer = ByteArray(8192)
                 while (true) {
@@ -57,12 +59,56 @@ fun parseBankStatementXlsx(input: InputStream): ParsedBankStatement {
             zip.closeEntry()
         }
     }
-    val sheet = entries["xl/worksheets/sheet1.xml"] ?: error("Die Excel-Datei enthält kein lesbares erstes Tabellenblatt.")
+    val sheetPath = if (entries["xl/workbook.xml"] != null && entries["xl/_rels/workbook.xml.rels"] != null) {
+        readXlsxFirstSheetPath(entries.getValue("xl/workbook.xml"), entries.getValue("xl/_rels/workbook.xml.rels"))
+    } else "xl/worksheets/sheet1.xml"
+    val sheet = entries[sheetPath] ?: error("Die Excel-Datei enthält kein lesbares erstes Tabellenblatt.")
     val sharedStrings = entries["xl/sharedStrings.xml"]?.let(::readXlsxSharedStrings).orEmpty()
     val rows = readXlsxRows(sheet, sharedStrings)
     require(rows.isNotEmpty()) { "Das Excel-Tabellenblatt ist leer." }
     val csv = rows.joinToString("\n") { row -> row.joinToString(";") { value -> "\"${value.replace("\"", "\"\"")}\"" } }
     return parseBankStatementCsv(ByteArrayInputStream(csv.toByteArray(Charsets.UTF_8)))
+}
+
+private fun readXlsxFirstSheetPath(workbook: ByteArray, relationships: ByteArray): String {
+    val workbookParser = XmlPullParserFactory.newInstance().newPullParser().apply {
+        setInput(ByteArrayInputStream(workbook), "UTF-8")
+    }
+    var relationshipId: String? = null
+    var event = workbookParser.eventType
+    while (event != XmlPullParser.END_DOCUMENT && relationshipId == null) {
+        if (event == XmlPullParser.START_TAG && workbookParser.name == "sheet") {
+            for (index in 0 until workbookParser.attributeCount) {
+                if (workbookParser.getAttributeName(index).substringAfter(':') == "id") {
+                    relationshipId = workbookParser.getAttributeValue(index)
+                    break
+                }
+            }
+        }
+        event = workbookParser.next()
+    }
+    val firstSheetId = relationshipId ?: error("Die Excel-Datei enthält kein Tabellenblatt.")
+
+    val relsParser = XmlPullParserFactory.newInstance().newPullParser().apply {
+        setInput(ByteArrayInputStream(relationships), "UTF-8")
+    }
+    var target: String? = null
+    event = relsParser.eventType
+    while (event != XmlPullParser.END_DOCUMENT && target == null) {
+        if (event == XmlPullParser.START_TAG && relsParser.name == "Relationship" &&
+            relsParser.getAttributeValue(null, "Id") == firstSheetId &&
+            relsParser.getAttributeValue(null, "TargetMode") != "External") {
+            target = relsParser.getAttributeValue(null, "Target")
+        }
+        event = relsParser.next()
+    }
+    val rawTarget = target ?: error("Das erste Excel-Tabellenblatt ist nicht mit einer Arbeitsmappe verknüpft.")
+    val normalized = if (rawTarget.startsWith("/")) rawTarget.removePrefix("/")
+    else "xl/$rawTarget"
+    require(normalized.startsWith("xl/worksheets/") && !normalized.split('/').any { it == ".." }) {
+        "Der Excel-Arbeitsmappenverweis ist ungültig."
+    }
+    return normalized
 }
 
 private fun readXlsxSharedStrings(xml: ByteArray): List<String> {

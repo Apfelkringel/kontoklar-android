@@ -16,6 +16,8 @@ import org.xmlpull.v1.XmlPullParserFactory
 
 private const val MAX_BANK_CSV_BYTES = 20L * 1024 * 1024
 private const val MAX_BANK_CSV_ROWS = 50_000
+private const val MAX_BANK_XLSX_CELLS = 250_000
+private const val MAX_BANK_XLSX_COLUMNS = 256
 
 fun parseBankStatement(input: InputStream, context: Context? = null): ParsedBankStatement {
     val buffered = if (input.markSupported()) input else BufferedInputStream(input)
@@ -136,6 +138,7 @@ private fun readXlsxRows(xml: ByteArray, sharedStrings: List<String>): List<List
     var cellType = ""
     var cellValue = StringBuilder()
     var inValue = false
+    var parsedCells = 0
     var event = parser.eventType
     while (event != XmlPullParser.END_DOCUMENT) {
         when (event) {
@@ -154,10 +157,13 @@ private fun readXlsxRows(xml: ByteArray, sharedStrings: List<String>): List<List
                 "c" -> if (currentRow != null && cellColumn >= 0) {
                     val raw = cellValue.toString()
                     currentRow!![cellColumn] = if (cellType == "s") sharedStrings.getOrNull(raw.toIntOrNull() ?: -1).orEmpty() else raw
+                    parsedCells++
+                    require(parsedCells <= MAX_BANK_XLSX_CELLS) { "Das Excel-Tabellenblatt enthält zu viele Zellen." }
                     cellColumn = -1
                 }
                 "row" -> currentRow?.let { values ->
                     if (values.isNotEmpty()) {
+                        require(rows.size < MAX_BANK_CSV_ROWS) { "Das Excel-Tabellenblatt enthält zu viele Buchungszeilen." }
                         val last = values.keys.maxOrNull() ?: -1
                         rows += (0..last).map { values[it].orEmpty() }
                     }
@@ -178,7 +184,7 @@ private fun xlsxColumnIndex(reference: String): Int {
         found = true
         value = value * 26 + (character.uppercaseChar() - 'A' + 1)
     }
-    return if (found) value - 1 else -1
+    return if (found && value <= MAX_BANK_XLSX_COLUMNS) value - 1 else -1
 }
 
 /** Imports the documented C24 and comdirect transaction CSV exports without sending them off-device. */

@@ -97,6 +97,7 @@ private fun KontoKlarApp() {
     var editingProduct by remember { mutableStateOf(Product(name = "", unitPriceCents = 0)) }
     var productToDelete by remember { mutableStateOf<Product?>(null) }
     var documentsOpen by remember { mutableStateOf(false) }
+    var supportOpen by remember { mutableStateOf(false) }
     var restoreBackupUri by remember { mutableStateOf<Uri?>(null) }
     var backupPasswordDialog by remember { mutableStateOf(false) }
     var backupPasswordForRestore by remember { mutableStateOf(false) }
@@ -228,7 +229,9 @@ private fun KontoKlarApp() {
                 })
                 Page.More -> MoreScreen(profile = profile, onAction = { action ->
                     if (action == "Einstellungen" || action == "Unternehmensprofil") dialog = "Unternehmensprofil"
-                    else if (action == "Bankkonten & Accountable Banking") page = Page.Banking
+                    else if (action == "Kontoauszüge & Abgleich") page = Page.Banking
+                    else if (action == "Steuerübersicht") page = Page.Taxes
+                    else if (action == "Hilfe & Support") supportOpen = true
                     else if (action == "Kunden") customersOpen = true
                     else if (action == "Angebote") offersOpen = true
                     else if (action == "Produkte & Dienstleistungen") productsOpen = true
@@ -332,6 +335,7 @@ private fun KontoKlarApp() {
                 dismissButton = { TextButton(onClick = { productToDelete = null }) { Text("Abbrechen") } }
             )
         }
+        if (supportOpen) SupportDialog(onDismiss = { supportOpen = false })
         if (documentsOpen) DataManagementDialog(
             onDismiss = { documentsOpen = false },
             onExport = { documentsOpen = false; backupPasswordForRestore = false; backupPassword = ""; backupPasswordDialog = true },
@@ -736,7 +740,7 @@ private fun TaxScreen(invoices: List<Invoice>, expenses: List<Expense>, deadline
             }
         }
         item { Text("Weitere Werkzeuge", fontWeight = FontWeight.Bold, color = Ink, fontSize = 18.sp) }
-        item { TaskRow("Absender- und Steuerdaten", "Name, Adresse, Steuernummer und Umsatzsteuer", "Profil öffnen", Icons.Default.Tune, onClick = { onAction("Steuerprofil") }) }
+        item { TaskRow("Absender- und Steuerdaten", "Tätigkeit, Rechtsform, Adresse und Umsatzsteuer", "Profil öffnen", Icons.Default.Tune, onClick = { onAction("Steuerprofil") }) }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -798,10 +802,43 @@ private fun TaxScreen(invoices: List<Invoice>, expenses: List<Expense>, deadline
 }
 
 @Composable
+private fun SupportDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Hilfe & Support", color = Ink, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Daten & Synchronisierung", color = Ink, fontWeight = FontWeight.SemiBold)
+                Text("Rechnungen, Ausgaben, Kunden und Bankimporte werden lokal auf diesem Gerät gespeichert. Für den Gerätewechsel kannst du unter Mehr → Dokumente eine verschlüsselte Sicherung erstellen. Das Sicherungspasswort ist nicht wiederherstellbar.", color = Muted, fontSize = 13.sp)
+                Text("App aktualisieren", color = Ink, fontWeight = FontWeight.SemiBold)
+                Text("Öffne Mehr und verwende die Update-Karte. KontoKlar prüft die GitHub-Veröffentlichung, verifiziert die APK und übergibt sie an den Android-Paketinstaller.", color = Muted, fontSize = 13.sp)
+                Text("Rechnungen & Steuern", color = Ink, fontWeight = FontWeight.SemiBold)
+                Text("PDF- und Steuerfunktionen sind Arbeitswerkzeuge. Prüfe Pflichtangaben, Fristen und E-Rechnungen selbst oder mit fachlicher Unterstützung. Der Fristenplaner leitet keine gesetzlichen Termine ab.", color = Muted, fontSize = 13.sp)
+                Text("Wenn du Unterstützung anfragst, teile nur Informationen, die du selbst freigeben möchtest. Die Diagnose unten enthält keine Buchungen, Belege oder Unternehmensdaten.", color = Muted, fontSize = 12.sp)
+                Button(onClick = {
+                    val diagnostic = "KontoKlar Android ${BuildConfig.VERSION_NAME} · Android API ${Build.VERSION.SDK_INT}\nKeine Buchungs- oder Profildaten enthalten."
+                    val share = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_SUBJECT, "KontoKlar Support")
+                        putExtra(Intent.EXTRA_TEXT, diagnostic)
+                    }
+                    context.startActivity(Intent.createChooser(share, "Support-Information teilen"))
+                }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Forest)) {
+                    Icon(Icons.Default.Share, null); Spacer(Modifier.width(8.dp)); Text("Unpersönliche Diagnose teilen")
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Schließen", color = Forest) } },
+        containerColor = Color.White
+    )
+}
+
+@Composable
 private fun MoreScreen(profile: BusinessProfile, onAction: (String) -> Unit) {
-    val links = listOf("Bankkonten & Accountable Banking" to Icons.Default.AccountBalanceWallet, "Kunden" to Icons.Default.People, "Angebote" to Icons.Default.RequestQuote, "Produkte & Dienstleistungen" to Icons.Default.Inventory2, "Dokumente" to Icons.Default.Folder, "Steuer-Assistent" to Icons.Default.AutoAwesome, "Mit Buchhalter teilen" to Icons.Default.Share, "Einstellungen" to Icons.Default.Settings, "Hilfe & Support" to Icons.Default.HelpOutline)
+    val links = listOf("Kontoauszüge & Abgleich" to Icons.Default.AccountBalanceWallet, "Kunden" to Icons.Default.People, "Angebote" to Icons.Default.RequestQuote, "Produkte & Dienstleistungen" to Icons.Default.Inventory2, "Dokumente" to Icons.Default.Folder, "Steuerübersicht" to Icons.Default.AutoAwesome, "Mit Buchhalter teilen" to Icons.Default.Share, "Einstellungen" to Icons.Default.Settings, "Hilfe & Support" to Icons.Default.HelpOutline)
     LazyColumn(contentPadding = PaddingValues(18.dp, 14.dp, 18.dp, 90.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(18.dp)) { Text(profile.businessName.ifBlank { profile.contactName }.ifBlank { "Unternehmensprofil" }, fontWeight = FontWeight.Bold, color = Ink, fontSize = 18.sp); Text(if (profile.businessName.isBlank() && profile.contactName.isBlank()) "Noch nicht eingerichtet · Daten bleiben lokal" else listOf(profile.street, listOf(profile.postalCode, profile.city).filter(String::isNotBlank).joinToString(" ")).filter(String::isNotBlank).joinToString(" · ").ifBlank { "Lokale Unternehmensdaten" }, color = Muted, fontSize = 13.sp) } } }
+        item { Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(18.dp)) { Text(profile.businessName.ifBlank { profile.contactName }.ifBlank { "Unternehmensprofil" }, fontWeight = FontWeight.Bold, color = Ink, fontSize = 18.sp); Text(listOf(profile.activity, profile.legalForm, profile.street, listOf(profile.postalCode, profile.city).filter(String::isNotBlank).joinToString(" ")).filter(String::isNotBlank).joinToString(" · ").ifBlank { if (profile.businessName.isBlank() && profile.contactName.isBlank()) "Noch nicht eingerichtet · Daten bleiben lokal" else "Lokale Unternehmensdaten" }, color = Muted, fontSize = 13.sp) } } }
         item { AppUpdateCard() }
         items(links) { (label, icon) -> Row(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(14.dp)).clickable { onAction(label) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(icon, null, tint = Forest); Spacer(Modifier.width(14.dp)); Text(label, color = Ink, modifier = Modifier.weight(1f)); Icon(Icons.Default.ChevronRight, null, tint = Muted) } }
     }
@@ -1119,6 +1156,8 @@ private fun ActionDialog(
     var scanStatus by remember { mutableStateOf<String?>(null) }
     var cameraOutputUri by remember { mutableStateOf<Uri?>(null) }
     var businessName by remember { mutableStateOf(profile.businessName) }
+    var businessActivity by remember { mutableStateOf(profile.activity) }
+    var legalForm by remember { mutableStateOf(profile.legalForm) }
     var businessEmail by remember { mutableStateOf(profile.email) }
     var contactName by remember { mutableStateOf(profile.contactName) }
     var contactPhone by remember { mutableStateOf(profile.phone) }
@@ -1167,6 +1206,8 @@ private fun ActionDialog(
                 if (isProfile) {
                     Text("Diese Angaben bleiben auf diesem Gerät. Prüfe Pflichtangaben vor dem Versand deiner Rechnungen.", color = Muted, fontSize = 12.sp)
                     OutlinedTextField(businessName, { businessName = it }, label = { Text("Name / Unternehmen") }, singleLine = true)
+                    OutlinedTextField(businessActivity, { businessActivity = it.take(120) }, label = { Text("Tätigkeitsbereich (eigene Angabe)") }, singleLine = true)
+                    OutlinedTextField(legalForm, { legalForm = it.take(80) }, label = { Text("Rechtsform (eigene Angabe)") }, singleLine = true)
                     OutlinedTextField(businessEmail, { businessEmail = it }, label = { Text("Geschäftliche E-Mail für E-Rechnungen") }, singleLine = true)
                     OutlinedTextField(contactName, { contactName = it }, label = { Text("Ansprechpartner für Rechnungen") }, singleLine = true)
                     OutlinedTextField(contactPhone, { contactPhone = it }, label = { Text("Telefon des Ansprechpartners") }, singleLine = true)
@@ -1307,7 +1348,7 @@ private fun ActionDialog(
                 when {
                     isProfile && invoicePrefix.isBlank() -> error = "Bitte gib ein Rechnungsnummer-Präfix an."
                     isProfile && (paymentTermsDays.toIntOrNull() !in 1..90 || vatRatePercent.toIntOrNull() !in 0..27) -> error = "Zahlungsziel: 1–90 Tage; USt.-Satz: 0–27 %."
-                    isProfile -> onSaveProfile(BusinessProfile(businessName.trim(), street.trim(), postalCode.trim(), city.trim(), taxNumber.trim(), vatId.trim(), invoicePrefix.trim(), paymentTermsDays.toInt(), vatRatePercent.toInt(), businessEmail.trim(), contactName.trim(), contactPhone.trim(), businessIban.trim()))
+                    isProfile -> onSaveProfile(BusinessProfile(businessName.trim(), street.trim(), postalCode.trim(), city.trim(), taxNumber.trim(), vatId.trim(), invoicePrefix.trim(), paymentTermsDays.toInt(), vatRatePercent.toInt(), businessEmail.trim(), contactName.trim(), contactPhone.trim(), businessIban.trim(), businessActivity.trim(), legalForm.trim()))
                     isInvoice && customer.isBlank() -> error = "Bitte gib einen Kunden an."
                     isInvoice && invoiceLinesToSave.any { it.description.isBlank() } -> error = "Bitte beschreibe jede Rechnungsposition."
                     isInvoice && invoiceLinesToSave.any { it.amountCents <= 0 } -> error = "Bitte gib für jede Position einen gültigen positiven Betrag an."

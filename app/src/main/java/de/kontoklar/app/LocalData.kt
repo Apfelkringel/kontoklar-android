@@ -128,7 +128,9 @@ data class BusinessProfile(
     val email: String = "",
     val contactName: String = "",
     val phone: String = "",
-    val iban: String = ""
+    val iban: String = "",
+    val activity: String = "",
+    val legalForm: String = ""
 )
 
 data class InvoiceAmountBreakdown(val netCents: Long, val vatCents: Long, val grossCents: Long)
@@ -317,7 +319,8 @@ class LocalData(context: Context) {
             .put("taxNumber", profile.taxNumber).put("vatId", profile.vatId)
             .put("invoicePrefix", profile.invoicePrefix).put("paymentTermsDays", profile.paymentTermsDays)
             .put("vatRatePercent", profile.vatRatePercent).put("email", profile.email)
-            .put("contactName", profile.contactName).put("phone", profile.phone).put("iban", profile.iban)
+        .put("contactName", profile.contactName).put("phone", profile.phone).put("iban", profile.iban)
+        .put("activity", profile.activity).put("legalForm", profile.legalForm)
 
     private fun businessProfileFromJson(json: JSONObject) = BusinessProfile(
         businessName = json.optString("businessName"), street = json.optString("street"),
@@ -327,7 +330,8 @@ class LocalData(context: Context) {
         paymentTermsDays = json.optInt("paymentTermsDays", 14).coerceIn(1, 90),
         vatRatePercent = json.optInt("vatRatePercent", 19).coerceIn(0, 27),
         email = json.optString("email"), contactName = json.optString("contactName"),
-        phone = json.optString("phone"), iban = json.optString("iban")
+        phone = json.optString("phone"), iban = json.optString("iban"),
+        activity = json.optString("activity"), legalForm = json.optString("legalForm")
     )
 
     fun nextInvoiceNumber(): String {

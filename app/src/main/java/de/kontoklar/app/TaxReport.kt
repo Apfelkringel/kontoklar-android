@@ -16,8 +16,11 @@ data class TaxYearReport(
     val recordedDifferenceCents: Long,
     val openInvoiceCents: Long,
     val overdueInvoiceCount: Int,
-    val missingReceiptCount: Int
+    val missingReceiptCount: Int,
+    val expenseByCategory: List<ExpenseCategoryTotal>
 )
+
+data class ExpenseCategoryTotal(val category: String, val amountCents: Long, val count: Int)
 
 fun taxYearReport(
     year: Int,
@@ -38,6 +41,9 @@ fun taxYearReport(
     val invoiceTotal = issuedInvoices.sumOf { it.amountCents }
     val expenseTotal = yearExpenses.sumOf { it.amountCents }
     val expensesWithVat = yearExpenses.filter { it.inputVatCents != null }
+    val expensesByCategory = yearExpenses.groupBy { it.category.trim().ifBlank { "Ohne Kategorie" } }
+        .map { (category, records) -> ExpenseCategoryTotal(category, records.sumOf(Expense::amountCents), records.size) }
+        .sortedWith(compareByDescending<ExpenseCategoryTotal> { it.amountCents }.thenBy { it.category.lowercase() })
     val invoiceAmountsWithVat = issuedInvoices.mapNotNull { invoice ->
         invoice.vatRatePercent?.let { invoiceTaxBreakdown(invoice, it) }
     }
@@ -55,6 +61,7 @@ fun taxYearReport(
         recordedDifferenceCents = invoiceTotal - expenseTotal,
         openInvoiceCents = openInvoices.sumOf(::invoiceOutstandingCents),
         overdueInvoiceCount = overdueInvoices.size,
-        missingReceiptCount = yearExpenses.count { it.receiptUri.isNullOrBlank() }
+        missingReceiptCount = yearExpenses.count { it.receiptUri.isNullOrBlank() },
+        expenseByCategory = expensesByCategory
     )
 }

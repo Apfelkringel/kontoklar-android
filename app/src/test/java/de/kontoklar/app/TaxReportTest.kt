@@ -85,4 +85,20 @@ class TaxReportTest {
         assertEquals(5_700L, report.documentedOutputVatCents)
         assertEquals(30_000L, report.netInvoiceCentsWithVatSnapshot)
     }
+
+    @Test fun groupsOnlySelectedYearExpensesByUserEnteredCategoryInDescendingValueOrder() {
+        val expenses = listOf(
+            Expense(merchant = "Server", category = "Software", amountCents = 7000, date = "2026-01-02"),
+            Expense(merchant = "Cloud", category = "Software", amountCents = 3000, date = "2026-05-04"),
+            Expense(merchant = "Train", category = "Reisekosten", amountCents = 8000, date = "2026-03-20"),
+            Expense(merchant = "Other", category = " ", amountCents = 500, date = "2026-12-31"),
+            Expense(merchant = "Old", category = "Software", amountCents = 50_000, date = "2025-12-31")
+        )
+
+        val totals = taxYearReport(2026, emptyList(), expenses).expenseByCategory
+
+        assertEquals(listOf("Software", "Reisekosten", "Ohne Kategorie"), totals.map(ExpenseCategoryTotal::category))
+        assertEquals(listOf(10_000L, 8000L, 500L), totals.map(ExpenseCategoryTotal::amountCents))
+        assertEquals(listOf(2, 1, 1), totals.map(ExpenseCategoryTotal::count))
+    }
 }

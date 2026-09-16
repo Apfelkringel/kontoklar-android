@@ -831,6 +831,21 @@ private fun TaxScreen(invoices: List<Invoice>, expenses: List<Expense>, deadline
         }
         item {
             Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("Ausgaben nach eigener Kategorie", fontWeight = FontWeight.Bold, color = Ink, fontSize = 17.sp)
+                    Text("Gruppierung nach den Kategorien, die du beim Erfassen gewählt hast – keine steuerliche Zuordnung.", color = Muted, fontSize = 11.sp)
+                    if (report.expenseByCategory.isEmpty()) Text("Für ${report.year} sind keine Ausgaben erfasst.", color = Muted, fontSize = 12.sp)
+                    report.expenseByCategory.forEach { total ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(total.category, color = Ink, modifier = Modifier.weight(1f))
+                            Text("${total.count} · ${formatEuro(total.amountCents)}", color = Ink, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Prüfen", fontWeight = FontWeight.Bold, color = Ink, fontSize = 17.sp)
                     Text("Offene Rechnungen: ${formatEuro(report.openInvoiceCents)}", color = Ink)

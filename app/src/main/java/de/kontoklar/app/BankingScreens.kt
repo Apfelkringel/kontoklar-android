@@ -61,6 +61,7 @@ fun BankingScreen(
     onDeleteBankProfile: () -> Unit,
     onImportStatement: () -> Unit,
     onOpenComdirectApi: () -> Unit,
+    onOpenCommunityUrl: (String) -> Unit,
     onMatchInvoice: (BankTransaction, Invoice) -> Unit,
     onMatchExpense: (BankTransaction, Expense) -> Unit,
     onClassifyTransaction: (BankTransaction, String) -> Unit
@@ -68,6 +69,7 @@ fun BankingScreen(
     val credits = transactions.filter { it.amountCents > 0 }
     val debits = transactions.filter { it.amountCents < 0 }
     var confirmDeleteBankProfile by remember { mutableStateOf(false) }
+    var communityGuideOpen by remember { mutableStateOf(false) }
     var selectedAdditionalAccountTypes by remember { mutableStateOf(setOf("SECURITY")) }
     val requestedAccountTypes = listOf("CHECKING") + listOf("SAVINGS", "CREDIT_CARD", "SECURITY").filter { it in selectedAdditionalAccountTypes }
     if (confirmDeleteBankProfile) {
@@ -80,6 +82,27 @@ fun BankingScreen(
             },
             dismissButton = { TextButton(onClick = { confirmDeleteBankProfile = false }) { Text("Abbrechen") }
             }
+        )
+    }
+    if (communityGuideOpen) {
+        AlertDialog(
+            onDismissRequest = { communityGuideOpen = false },
+            title = { Text("Kostenlose Bankimporte") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Die Dateien werden nur auf deinem Gerät verarbeitet. KontoKlar fragt keine Bank-PIN ab.", color = Muted, fontSize = 12.sp)
+                    Text("C24", color = Ink, fontWeight = FontWeight.Bold)
+                    Text("Im C24-Webbanking CSV, Excel oder Kontoauszug-PDF exportieren und anschließend hier importieren.", color = Muted, fontSize = 11.sp)
+                    TextButton(onClick = { onOpenCommunityUrl("https://hilfe.c24.de/hc/de/articles/360017014279-Wie-ist-PSD2-bei-der-C24-Bank-umgesetzt") }) { Text("C24-Hinweise öffnen") }
+                    Text("comdirect", color = Ink, fontWeight = FontWeight.Bold)
+                    Text("CSV-Export direkt importieren. Für das kostenlose eigene API-Konto Clientdaten bei comdirect registrieren; PIN und Client-Secret gehören niemals in KontoKlar.", color = Muted, fontSize = 11.sp)
+                    TextButton(onClick = onOpenComdirectApi) { Text("comdirect API öffnen") }
+                    Text("Trade Republic", color = Ink, fontWeight = FontWeight.Bold)
+                    Text("Kontoauszug-PDF importieren oder außerhalb der App mit pytr export_transactions eine CSV erzeugen.", color = Muted, fontSize = 11.sp)
+                    TextButton(onClick = { onOpenCommunityUrl("https://github.com/pytr-org/pytr") }) { Text("pytr auf GitHub öffnen") }
+                }
+            },
+            confirmButton = { TextButton(onClick = { communityGuideOpen = false }) { Text("Schließen") } }
         )
     }
     LazyColumn(
@@ -166,6 +189,9 @@ fun BankingScreen(
                         OutlinedButton(onClick = onOpenComdirectApi, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
                             Text("comdirect-API für eigenes Konto einrichten")
                         }
+                        OutlinedButton(onClick = { communityGuideOpen = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                            Text("Kostenlose Import-Anleitung anzeigen")
+                        }
                         Text("Die offizielle Registrierung öffnet sich im Browser. Client-Secret, PIN und TAN bleiben bei dir und werden nicht in KontoKlar eingegeben.", color = Muted, fontSize = 10.sp)
                     } else {
                         Text("Freigabe und Datenabruf laufen über finAPI. PIN und TAN gibst du ausschließlich im Bank-/finAPI-Dialog ein. Umsätze werden vom Anbieter abgerufen und danach in KontoKlar lokal gespeichert.", color = Muted, fontSize = 11.sp)
@@ -210,7 +236,7 @@ fun BankingScreen(
         }
         item {
             Button(onClick = onImportStatement, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest)) {
-                Icon(Icons.Default.FileOpen, null); Spacer(Modifier.width(8.dp)); Text("Kontoauszug importieren · CAMT / MT940 / CSV / XLSX / TR-PDF")
+                Icon(Icons.Default.FileOpen, null); Spacer(Modifier.width(8.dp)); Text("Kontoauszug importieren · CAMT / MT940 / CSV / XLSX / C24-/TR-PDF / pytr")
             }
         }
         item {

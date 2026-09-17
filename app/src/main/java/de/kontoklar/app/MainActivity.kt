@@ -478,6 +478,10 @@ private fun KontoKlarApp() {
                         }
                     },
                     onImportStatement = { bankStatementImportLauncher.launch(arrayOf("application/pdf", "application/xml", "text/xml", "application/camt.053+xml", "text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "*/*")) },
+                    onOpenCommunityUrl = { url ->
+                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                            .onFailure { toast = "Die Anleitung konnte nicht geöffnet werden." }
+                    },
                     onOpenComdirectApi = {
                         runCatching {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.comdirect.de/cms/kontakt-zugaenge-api.html")))

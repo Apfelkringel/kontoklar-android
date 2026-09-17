@@ -1222,12 +1222,31 @@ private fun Dashboard(
 
 @Composable
 private fun InvoiceScreen(invoices: List<Invoice>, onAction: (String) -> Unit, onSelect: (Invoice) -> Unit) {
+    var query by rememberSaveable { mutableStateOf("") }
+    val normalizedQuery = query.trim().lowercase()
+    val visibleInvoices = invoices.filter { invoice ->
+        normalizedQuery.isBlank() || listOf(invoice.number, invoice.customer, invoice.description, invoice.status, invoice.date, invoice.dueDate)
+            .any { it.lowercase().contains(normalizedQuery) }
+    }
     LazyColumn(contentPadding = PaddingValues(18.dp, 14.dp, 18.dp, 90.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val openInvoices = invoices.filter { it.status != "Entwurf" && invoiceOutstandingCents(it) > 0 }
         item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { MetricCard("Offen", formatEuro(openInvoices.sumOf(::invoiceOutstandingCents)), "${openInvoices.size} Rechnungen", Icons.Default.Schedule, Modifier.weight(1f)); MetricCard("Gesamt", formatEuro(invoices.sumOf { it.amountCents }), "${invoices.size} Rechnungen", Icons.Default.ShowChart, Modifier.weight(1f)) } }
+        item {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                trailingIcon = { if (query.isNotBlank()) IconButton(onClick = { query = "" }) { Icon(Icons.Default.Clear, "Suche löschen") } },
+                label = { Text("Rechnungen durchsuchen") },
+                placeholder = { Text("Kunde, Nummer, Status oder Datum") }
+            )
+        }
         item { SectionTitle("Alle Rechnungen", "2026") }
         if (invoices.isEmpty()) item { EmptyState("Noch keine Rechnungen", "Tippe auf +, um deinen ersten Entwurf anzulegen.") }
-        items(invoices, key = { it.id }) { invoice ->
+        if (invoices.isNotEmpty() && visibleInvoices.isEmpty()) item { EmptyState("Keine Treffer", "Ändere den Suchbegriff oder lösche die Suche.") }
+        items(visibleInvoices, key = { it.id }) { invoice ->
             val icon = if (invoiceOutstandingCents(invoice) == 0L && invoice.status != "Entwurf") Icons.Default.CheckCircle else Icons.Default.Description
             EntryRow(Entry(invoice.customer, "${invoice.number} · ${invoice.status} · fällig ${invoice.dueDate}", formatEuro(if (invoice.status == "Entwurf") invoice.amountCents else invoiceOutstandingCents(invoice)), icon, if (icon == Icons.Default.CheckCircle) Mint else Color(0xFFE6F2EB)), onClick = { onSelect(invoice) })
         }
@@ -1236,13 +1255,32 @@ private fun InvoiceScreen(invoices: List<Invoice>, onAction: (String) -> Unit, o
 
 @Composable
 private fun ExpenseScreen(expenses: List<Expense>, onAction: (String) -> Unit, onSelect: (Expense) -> Unit) {
+    var query by rememberSaveable { mutableStateOf("") }
+    val normalizedQuery = query.trim().lowercase()
+    val visibleExpenses = expenses.filter { expense ->
+        normalizedQuery.isBlank() || listOf(expense.merchant, expense.category, expense.note, expense.date)
+            .any { it.lowercase().contains(normalizedQuery) }
+    }
     LazyColumn(contentPadding = PaddingValues(18.dp, 14.dp, 18.dp, 90.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Card(colors = CardDefaults.cardColors(containerColor = Mint), shape = RoundedCornerShape(20.dp)) { Row(Modifier.fillMaxWidth().clickable { onAction("Beleg scannen") }.padding(18.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.DocumentScanner, null, tint = Forest, modifier = Modifier.size(28.dp)); Spacer(Modifier.width(14.dp)); Column { Text("Beleg scannen", color = Ink, fontWeight = FontWeight.Bold); Text("Foto aufnehmen oder Datei auswählen", color = Muted, fontSize = 12.sp) }; Spacer(Modifier.weight(1f)); Icon(Icons.Default.ChevronRight, null, tint = Forest) } } }
         item { OutlinedButton(onClick = { onAction("E-Rechnung empfangen") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Inbox, null); Spacer(Modifier.width(8.dp)); Text("E-Rechnung importieren") } }
         item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { MetricCard("Ausgaben", formatEuro(expenses.sumOf { it.amountCents }), "${expenses.size} erfasst", Icons.Default.Payments, Modifier.weight(1f)); MetricCard("Beleg fehlt", "${expenses.count { it.receiptUri.isNullOrBlank() }}", "Ausgaben", Icons.Default.ErrorOutline, Modifier.weight(1f)) } }
+        item {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                trailingIcon = { if (query.isNotBlank()) IconButton(onClick = { query = "" }) { Icon(Icons.Default.Clear, "Suche löschen") } },
+                label = { Text("Ausgaben durchsuchen") },
+                placeholder = { Text("Händler, Kategorie, Notiz oder Datum") }
+            )
+        }
         item { SectionTitle("Alle Ausgaben", "") }
         if (expenses.isEmpty()) item { EmptyState("Noch keine Ausgaben", "Erfasse einen Beleg oder füge eine Ausgabe hinzu.") }
-        items(expenses, key = { it.id }) { expense -> EntryRow(Entry(expense.merchant, "${expense.category} · ${expense.date}${expense.inputVatCents?.let { " · USt ${formatEuro(it)}" }.orEmpty()}${if (expense.receiptUri != null) " · Beleg angehängt" else " · Beleg fehlt"}", "−${formatEuro(expense.amountCents)}", Icons.Default.Receipt, Color(0xFFFFF1E5)), onClick = { onSelect(expense) }) }
+        if (expenses.isNotEmpty() && visibleExpenses.isEmpty()) item { EmptyState("Keine Treffer", "Ändere den Suchbegriff oder lösche die Suche.") }
+        items(visibleExpenses, key = { it.id }) { expense -> EntryRow(Entry(expense.merchant, "${expense.category} · ${expense.date}${expense.inputVatCents?.let { " · USt ${formatEuro(it)}" }.orEmpty()}${if (expense.receiptUri != null) " · Beleg angehängt" else " · Beleg fehlt"}", "−${formatEuro(expense.amountCents)}", Icons.Default.Receipt, Color(0xFFFFF1E5)), onClick = { onSelect(expense) }) }
     }
 }
 

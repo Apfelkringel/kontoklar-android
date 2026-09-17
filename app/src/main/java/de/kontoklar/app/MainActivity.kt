@@ -90,6 +90,7 @@ private fun KontoKlarApp() {
     val liveBanking = remember { LiveBankingClient(context.applicationContext) }
     var bankInstitutions by remember { mutableStateOf<List<BankingInstitution>>(emptyList()) }
     var liveBankConnections by remember { mutableStateOf<List<LiveBankConnection>>(emptyList()) }
+    var awaitingInitialBankSnapshot by remember { mutableStateOf(false) }
     var bankingBusy by remember { mutableStateOf(false) }
     var bankingMessage by remember { mutableStateOf<String?>(null) }
     var customers by remember { mutableStateOf(store.customers()) }
@@ -221,16 +222,47 @@ private fun KontoKlarApp() {
     }
     LaunchedEffect(invoices) { InvoiceReminderScheduler.reconcile(context, invoices) }
     LaunchedEffect(taxDeadlines) { TaxDeadlineReminderScheduler.reconcile(context, taxDeadlines) }
+
+    fun persistBankSnapshot(snapshot: LiveBankSnapshot): Int {
+        val known = bankTransactions.mapTo(hashSetOf(), BankTransaction::id)
+        val fresh = snapshot.transactions.filterNot { it.id in known }
+        bankTransactions = fresh + bankTransactions
+        if (fresh.isNotEmpty()) store.saveBankTransactions(bankTransactions)
+        bankAccounts = bankAccounts.filterNot { it.connectionId == snapshot.connection.id } + snapshot.accounts
+        bankSecurities = bankSecurities.filterNot { it.connectionId == snapshot.connection.id } + snapshot.securities
+        store.saveBankAccounts(bankAccounts)
+        store.saveBankSecurities(bankSecurities)
+        liveBankConnections = liveBankConnections.map { if (it.id == snapshot.connection.id) snapshot.connection else it }
+        return fresh.size
+    }
+
+    suspend fun refreshBankConnections() {
+        val previousIds = liveBankConnections.mapTo(hashSetOf(), LiveBankConnection::id)
+        val (banks, connections) = withContext(Dispatchers.IO) {
+            liveBanking.institutions() to liveBanking.connections()
+        }
+        val justConnected = if (awaitingInitialBankSnapshot) connections.filterNot { it.id in previousIds } else emptyList()
+        val initialSnapshots = withContext(Dispatchers.IO) { justConnected.map(liveBanking::snapshot) }
+        bankInstitutions = banks
+        liveBankConnections = connections
+        if (initialSnapshots.isNotEmpty()) {
+            val newTransactions = initialSnapshots.sumOf(::persistBankSnapshot)
+            awaitingInitialBankSnapshot = false
+            val accountCount = initialSnapshots.sumOf { it.accounts.size }
+            val positionCount = initialSnapshots.sumOf { it.securities.size }
+            bankingMessage = "Bankverbindung eingerichtet: $accountCount Konten, $positionCount Depotpositionen und $newTransactions neue Umsätze geladen."
+        } else if (awaitingInitialBankSnapshot) {
+            bankingMessage = "Die Freigabe ist zurückgekehrt. Falls die Verbindung noch verarbeitet wird, tippe auf Aktualisieren."
+        } else {
+            bankingMessage = null
+        }
+    }
+
     LaunchedEffect(page, liveBanking.isConfigured, resumeVersion) {
         if (page == Page.Banking && liveBanking.isConfigured) {
             bankingBusy = true
-            runCatching {
-                withContext(Dispatchers.IO) { liveBanking.institutions() to liveBanking.connections() }
-            }.onSuccess { (banks, connections) ->
-                bankInstitutions = banks
-                liveBankConnections = connections
-                bankingMessage = null
-            }.onFailure { bankingMessage = it.message ?: "Banken konnten nicht geladen werden." }
+            runCatching { refreshBankConnections() }
+                .onFailure { bankingMessage = it.message ?: "Banken konnten nicht geladen werden." }
             bankingBusy = false
         }
     }
@@ -316,6 +348,7 @@ private fun KontoKlarApp() {
                             runCatching {
                                 val session = withContext(Dispatchers.IO) { liveBanking.connect(institution?.id) }
                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(session.authorizationUrl)))
+                                awaitingInitialBankSnapshot = true
                                 if (institution == null) "Bankauswahl geöffnet. Wähle deine Bank im sicheren Freigabeformular und kehre danach hierher zurück – KontoKlar prüft die Verbindung automatisch."
                                 else "Freigabe bei ${institution.name} geöffnet. Kehre danach hierher zurück – KontoKlar prüft die Verbindung automatisch."
                             }.onSuccess { bankingMessage = it }
@@ -326,8 +359,8 @@ private fun KontoKlarApp() {
                     onRefreshConnections = {
                         scope.launch {
                             bankingBusy = true
-                            runCatching { withContext(Dispatchers.IO) { liveBanking.connections() } }
-                                .onSuccess { liveBankConnections = it; bankingMessage = "Bankverbindungen aktualisiert." }
+                            runCatching { refreshBankConnections() }
+                                .onSuccess { if (!awaitingInitialBankSnapshot) bankingMessage = "Bankverbindungen aktualisiert." }
                                 .onFailure { bankingMessage = it.message ?: "Verbindungen konnten nicht aktualisiert werden." }
                             bankingBusy = false
                         }
@@ -349,16 +382,8 @@ private fun KontoKlarApp() {
                                         bankingBusy = false
                                         return@launch
                                     }
-                                    val known = bankTransactions.mapTo(hashSetOf(), BankTransaction::id)
-                                    val fresh = snapshot.transactions.filterNot { it.id in known }
-                                    bankTransactions = fresh + bankTransactions
-                                    if (fresh.isNotEmpty()) store.saveBankTransactions(bankTransactions)
-                                    bankAccounts = bankAccounts.filterNot { it.connectionId == connection.id } + snapshot.accounts
-                                    bankSecurities = bankSecurities.filterNot { it.connectionId == connection.id } + snapshot.securities
-                                    store.saveBankAccounts(bankAccounts)
-                                    store.saveBankSecurities(bankSecurities)
-                                    liveBankConnections = liveBankConnections.map { if (it.id == connection.id) snapshot.connection else it }
-                                    bankingMessage = "${fresh.size} neue Umsätze von ${connection.bankName} geladen."
+                                    val freshCount = persistBankSnapshot(snapshot)
+                                    bankingMessage = "${freshCount} neue Umsätze von ${connection.bankName} geladen."
                                 }
                                 .onFailure { bankingMessage = it.message ?: "Bankumsätze konnten nicht synchronisiert werden." }
                             bankingBusy = false

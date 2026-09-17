@@ -36,6 +36,14 @@ class LiveBankingClient(context: Context, private val baseUrl: String = BuildCon
 
     fun connections(): List<LiveBankConnection> = request("GET", "/v1/connections").getJSONArray("connections").asList(::connectionFromJson)
 
+    /** Loads the provider snapshot already created by the user's successful bank authorization. */
+    fun snapshot(connection: LiveBankConnection): LiveBankSnapshot {
+        val result = request("GET", "/v1/connections/${connection.id.pathSegment()}")
+        return parseLiveBankSnapshot(result).also {
+            require(it.connection.id == connection.id) { "Der Bankdienst hat Daten für eine andere Verbindung geliefert." }
+        }
+    }
+
     fun connect(bankId: String? = null): BankLinkSession {
         val payload = JSONObject().apply { bankId?.let { put("bankId", it) } }
         val result = request("POST", "/v1/connections", payload)
@@ -56,32 +64,7 @@ class LiveBankingClient(context: Context, private val baseUrl: String = BuildCon
             }
         }
         if (status != "COMPLETED") return BankSyncResult(status, authorizationUrl)
-        val snapshotJson = result.getJSONObject("snapshot")
-        val transactions = snapshotJson.optJSONArray("transactions").orEmpty().asList { row ->
-            val amount = row.getLong("amountCents")
-            BankTransaction(
-                id = "live:${row.getString("id")}",
-                accountIban = row.optString("accountIban"),
-                date = row.getString("date"),
-                counterparty = row.optString("counterparty", "Unbekannter Zahlungspartner"),
-                description = row.optString("description"),
-                amountCents = amount,
-                reference = row.optString("reference")
-            )
-        }
-        val state = connectionFromJson(snapshotJson)
-        val accounts = snapshotJson.optJSONArray("accounts").orEmpty().asList { row ->
-            BankAccountSummary("live:${row.getString("id")}", state.id, row.optString("name"), row.optString("type"), row.optString("currency"),
-                row.takeUnless { it.isNull("balanceMinor") }?.optLong("balanceMinor"), row.optString("asOfDate"))
-        }
-        val securities = snapshotJson.optJSONArray("securities").orEmpty().asList { row ->
-            BankSecurityPosition(row.getString("id"), "live:${row.getString("accountId")}", state.id, row.optString("name"),
-                row.optString("isin"), row.optString("wkn"), row.takeUnless { it.isNull("quantityNominal") }?.optDouble("quantityNominal"),
-                row.optString("quantityType"), row.optString("quoteType"), row.takeUnless { it.isNull("quoteMinor") }?.optLong("quoteMinor"), row.optString("quoteCurrency"),
-                row.takeUnless { it.isNull("marketValueMinor") }?.optLong("marketValueMinor"), row.optString("marketValueCurrency"),
-                row.takeUnless { it.isNull("profitOrLossMinor") }?.optLong("profitOrLossMinor"), row.optString("quoteDate"))
-        }
-        return BankSyncResult(status, snapshot = LiveBankSnapshot(state, transactions, accounts, securities))
+        return BankSyncResult(status, snapshot = parseLiveBankSnapshot(result.getJSONObject("snapshot")))
     }
 
     fun delete(connectionId: String) {
@@ -124,15 +107,43 @@ class LiveBankingClient(context: Context, private val baseUrl: String = BuildCon
         }
     }
 
-    private fun connectionFromJson(row: JSONObject) = LiveBankConnection(
-        id = row.getString("id"), bankName = row.getString("bankName"), status = row.getString("status")
-    )
-
     private companion object {
         const val TOKEN_KEY = "live_banking_installation_token_v1"
         fun createInstallationToken(): String = ByteArray(32).also(SecureRandom()::nextBytes).let(Base64.getUrlEncoder().withoutPadding()::encodeToString)
         fun String.pathSegment(): String = java.net.URLEncoder.encode(this, Charsets.UTF_8.name()).replace("+", "%20")
-        fun <T> JSONArray.asList(map: (JSONObject) -> T): List<T> = List(length()) { index -> map(getJSONObject(index)) }
-        fun JSONArray?.orEmpty() = this ?: JSONArray()
     }
 }
+
+internal fun parseLiveBankSnapshot(json: JSONObject): LiveBankSnapshot {
+    val connection = connectionFromJson(json)
+    val transactions = json.optJSONArray("transactions").orEmpty().asList { row ->
+        BankTransaction(
+            id = "live:${row.getString("id")}",
+            accountIban = row.optString("accountIban"),
+            date = row.getString("date"),
+            counterparty = row.optString("counterparty", "Unbekannter Zahlungspartner"),
+            description = row.optString("description"),
+            amountCents = row.getLong("amountCents"),
+            reference = row.optString("reference")
+        )
+    }
+    val accounts = json.optJSONArray("accounts").orEmpty().asList { row ->
+        BankAccountSummary("live:${row.getString("id")}", connection.id, row.optString("name"), row.optString("type"), row.optString("currency"),
+            row.takeUnless { it.isNull("balanceMinor") }?.optLong("balanceMinor"), row.optString("asOfDate"))
+    }
+    val securities = json.optJSONArray("securities").orEmpty().asList { row ->
+        BankSecurityPosition(row.getString("id"), "live:${row.getString("accountId")}", connection.id, row.optString("name"),
+            row.optString("isin"), row.optString("wkn"), row.takeUnless { it.isNull("quantityNominal") }?.optDouble("quantityNominal"),
+            row.optString("quantityType"), row.optString("quoteType"), row.takeUnless { it.isNull("quoteMinor") }?.optLong("quoteMinor"), row.optString("quoteCurrency"),
+            row.takeUnless { it.isNull("marketValueMinor") }?.optLong("marketValueMinor"), row.optString("marketValueCurrency"),
+            row.takeUnless { it.isNull("profitOrLossMinor") }?.optLong("profitOrLossMinor"), row.optString("quoteDate"))
+    }
+    return LiveBankSnapshot(connection, transactions, accounts, securities)
+}
+
+private fun connectionFromJson(row: JSONObject) = LiveBankConnection(
+    id = row.getString("id"), bankName = row.getString("bankName"), status = row.getString("status")
+)
+
+private fun <T> JSONArray.asList(map: (JSONObject) -> T): List<T> = List(length()) { index -> map(getJSONObject(index)) }
+private fun JSONArray?.orEmpty() = this ?: JSONArray()

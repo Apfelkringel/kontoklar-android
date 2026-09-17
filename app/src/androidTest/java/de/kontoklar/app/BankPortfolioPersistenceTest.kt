@@ -15,6 +15,24 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class BankPortfolioPersistenceTest {
+    @Test fun mapsInitialBankSnapshotIntoLocalTransactionAccountsAndPositions() {
+        val snapshot = parseLiveBankSnapshot(JSONObject("""
+            {
+              "id":"42","bankName":"C24","status":"READY",
+              "transactions":[{"id":"77:900","accountIban":"DE02120300000000202051","date":"2026-09-16","counterparty":"Stadtwerke","description":"Abschlag","amountCents":-8742,"reference":"ref-1"}],
+              "accounts":[{"id":"77","name":"Girokonto","type":"Checking","currency":"EUR","balanceMinor":125050,"asOfDate":"2026-09-16"},{"id":"88","name":"Depot","type":"Security","currency":"EUR","balanceMinor":50000,"asOfDate":"2026-09-16"}],
+              "securities":[{"id":"900","accountId":"88","name":"ETF Muster","isin":"IE00TEST1234","wkn":"TST123","quantityNominal":2.5,"quantityType":"PIECE","quoteType":"ACTUAL","quoteMinor":10025,"quoteCurrency":"EUR","marketValueMinor":25063,"marketValueCurrency":"EUR","profitOrLossMinor":1230,"quoteDate":"2026-09-15"}]
+            }
+        """.trimIndent()))
+
+        assertEquals(LiveBankConnection("42", "C24", "READY"), snapshot.connection)
+        assertEquals(BankTransaction("live:77:900", "DE02120300000000202051", "2026-09-16", "Stadtwerke", "Abschlag", -8742, "ref-1"), snapshot.transactions.single())
+        assertEquals(BankAccountSummary("live:77", "42", "Girokonto", "Checking", "EUR", 125050, "2026-09-16"), snapshot.accounts.first())
+        assertEquals("live:88", snapshot.securities.single().accountId)
+        assertEquals(25063L, snapshot.securities.single().marketValueMinor)
+        assertEquals("IE00TEST1234", snapshot.securities.single().isin)
+    }
+
     @Test fun balancesAndPositionsSurviveEncryptedLocalBackupRestore() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val targetContext = instrumentation.targetContext

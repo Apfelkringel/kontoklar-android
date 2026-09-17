@@ -707,7 +707,7 @@ private fun KontoKlarApp() {
             onDismiss = { documentsOpen = false },
             onExport = { documentsOpen = false; backupPasswordForRestore = false; backupPassword = ""; backupPasswordDialog = true },
             onImport = { documentsOpen = false; backupImportLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream", "*/*")) },
-            onDelete = { deleteDataConfirmationOpen = true }
+            onDelete = { documentsOpen = false; deleteDataConfirmationOpen = true }
         )
         if (deleteDataConfirmationOpen) AlertDialog(
             onDismissRequest = { deleteDataConfirmationOpen = false },
@@ -716,26 +716,39 @@ private fun KontoKlarApp() {
             confirmButton = {
                 TextButton(onClick = {
                     deleteDataConfirmationOpen = false
-                    documentsOpen = false
-                    InvoiceReminderScheduler.reconcile(context, emptyList())
-                    TaxDeadlineReminderScheduler.reconcile(context, emptyList())
-                    store.clearAllLocalData()
-                    deleteAllLocalReceiptFiles(context)
-                    invoices = emptyList()
-                    invoicePayments = emptyList()
-                    expenses = emptyList()
-                    expensePayments = emptyList()
-                    bankTransactions = emptyList()
-                    bankAccounts = emptyList()
-                    bankSecurities = emptyList()
-                    customers = emptyList()
-                    offers = emptyList()
-                    products = emptyList()
-                    taxDeadlines = emptyList()
-                    recurringPlans = emptyList()
-                    recurringExpensePlans = emptyList()
-                    profile = BusinessProfile()
-                    toast = "Alle lokalen Daten wurden gelöscht"
+                    scope.launch {
+                        val remoteResult = if (liveBanking.isConfigured) runCatching {
+                            withContext(Dispatchers.IO) { liveBanking.deleteProviderProfile() }
+                        } else null
+                        runCatching {
+                            withContext(Dispatchers.IO) {
+                                InvoiceReminderScheduler.reconcile(context, emptyList())
+                                TaxDeadlineReminderScheduler.reconcile(context, emptyList())
+                                check(store.clearAllLocalData()) { "Lokale Daten konnten nicht vollständig gelöscht werden." }
+                                deleteAllLocalReceiptFiles(context)
+                            }
+                        }.onSuccess {
+                            invoices = emptyList()
+                            invoicePayments = emptyList()
+                            expenses = emptyList()
+                            expensePayments = emptyList()
+                            bankTransactions = emptyList()
+                            bankAccounts = emptyList()
+                            bankSecurities = emptyList()
+                            liveBankConnections = emptyList()
+                            bankInstitutions = emptyList()
+                            customers = emptyList()
+                            offers = emptyList()
+                            products = emptyList()
+                            taxDeadlines = emptyList()
+                            recurringPlans = emptyList()
+                            recurringExpensePlans = emptyList()
+                            profile = BusinessProfile()
+                            toast = if (remoteResult?.isFailure == true) {
+                                "Lokale Daten gelöscht; Live-Bankprofil konnte nicht erreicht werden"
+                            } else "Alle lokalen Daten wurden gelöscht"
+                        }.onFailure { toast = it.message ?: "Daten konnten nicht vollständig gelöscht werden." }
+                    }
                 }) { Text("Endgültig löschen", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { deleteDataConfirmationOpen = false }) { Text("Abbrechen") } }

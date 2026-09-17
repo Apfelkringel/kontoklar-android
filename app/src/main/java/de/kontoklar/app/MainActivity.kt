@@ -52,10 +52,23 @@ internal val Muted = Color(0xFF78827D)
 class MainActivity : ComponentActivity() {
     var resumeVersion by mutableIntStateOf(0)
         private set
+    var sharedBankStatementUri by mutableStateOf<Uri?>(null)
+        private set
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        sharedBankStatementUri = intent.bankStatementUri()
         setContent { KontoKlarApp() }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        sharedBankStatementUri = intent.bankStatementUri()
+    }
+
+    fun consumeSharedBankStatement(uri: Uri) {
+        if (sharedBankStatementUri == uri) sharedBankStatementUri = null
     }
 
     override fun onResume() {
@@ -77,6 +90,15 @@ private enum class Page(val title: String, val icon: ImageVector) {
 
 private data class Entry(val title: String, val subtitle: String, val amount: String, val icon: ImageVector, val tint: Color)
 private data class InvoiceLineInput(val description: String, val amount: String)
+
+private fun Intent.bankStatementUri(): Uri? = when (action) {
+    Intent.ACTION_SEND, Intent.ACTION_VIEW -> getParcelableExtraCompat(Intent.EXTRA_STREAM) ?: data
+    else -> null
+}
+
+@Suppress("DEPRECATION")
+private fun <T : android.os.Parcelable> Intent.getParcelableExtraCompat(key: String): T? =
+    if (Build.VERSION.SDK_INT >= 33) getParcelableExtra(key, android.os.Parcelable::class.java) as? T else getParcelableExtra(key)
 
 @Composable
 private fun KontoKlarApp() {
@@ -137,6 +159,7 @@ private fun KontoKlarApp() {
     var incomingInvoiceUri by remember { mutableStateOf<Uri?>(null) }
     var incomingInvoiceError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val sharedBankStatementUri = (context as? MainActivity)?.sharedBankStatementUri
     LaunchedEffect(store) {
         withContext(Dispatchers.IO) { store.migrateMatchedInvoicePayments() }
         invoicePayments = store.invoicePayments()
@@ -169,8 +192,8 @@ private fun KontoKlarApp() {
     val backupImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->
         if (source != null) restoreBackupUri = source
     }
-    val bankStatementImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->
-        if (source != null) scope.launch {
+    fun importBankStatement(source: Uri) {
+        scope.launch {
             runCatching {
                 runCatching { context.contentResolver.takePersistableUriPermission(source, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                 withContext(Dispatchers.IO) {
@@ -204,6 +227,16 @@ private fun KontoKlarApp() {
                     toast = "${newTransactions.size} Bankumsätze$positionText importiert$accountText"
                 }
             }.onFailure { toast = it.message ?: "Der Kontoauszug konnte nicht importiert werden." }
+        }
+    }
+    val bankStatementImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->
+        if (source != null) importBankStatement(source)
+    }
+    LaunchedEffect(sharedBankStatementUri) {
+        sharedBankStatementUri?.let { source ->
+            page = Page.Banking
+            importBankStatement(source)
+            (context as? MainActivity)?.consumeSharedBankStatement(source)
         }
     }
     val incomingInvoiceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->

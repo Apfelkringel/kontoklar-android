@@ -39,23 +39,14 @@ jobs:
           KONTOKLAR_BANKING_API_BASE_URL: ${{ vars.KONTOKLAR_BANKING_API_BASE_URL }}
         run: ./gradlew testDebugUnitTest assembleDebugAndroidTest assembleRelease
       - name: Publish APK release
+        uses: softprops/action-gh-release@v2
         env:
-          GH_TOKEN: ${{ github.token }}
           BANKING_API_BASE_URL: ${{ vars.KONTOKLAR_BANKING_API_BASE_URL }}
-        run: |
-          if [ -n "${BANKING_API_BASE_URL:-}" ]; then
-            BANKING_NOTE="Live-Banking-Backend konfiguriert; die Verbindung zu Bank und Kontotypen hängt von der Freigabe des Anbieters ab."
-          else
-            BANKING_NOTE="Live-Banking ist in diesem Build noch deaktiviert. Kontoauszüge können lokal importiert werden."
-          fi
-          gh release create "$GITHUB_REF_NAME" \
-            --title "KontoKlar $GITHUB_REF_NAME" \
-            --notes "Automatisierter Android-Build. $BANKING_NOTE Installation und Updates werden vom Android-System bestätigt."
-          for attempt in 1 2 3; do
-            if timeout 10m gh release upload "$GITHUB_REF_NAME" app/build/outputs/apk/release/app-release.apk --clobber; then
-              exit 0
-            fi
-            if [ "$attempt" -lt 3 ]; then sleep 20; fi
-          done
-          echo "GitHub konnte das APK nach drei Versuchen nicht als Release-Asset speichern." >&2
-          exit 1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: KontoKlar ${{ github.ref_name }}
+          files: app/build/outputs/apk/release/app-release.apk
+          body: |
+            Automatisierter Android-Build.
+            Live-Banking ist in diesem Build noch deaktiviert; Kontoauszüge können lokal importiert werden.
+            Installation und Updates werden vom Android-System bestätigt.

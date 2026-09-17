@@ -18,6 +18,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SyncAlt
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -32,6 +34,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -73,7 +76,19 @@ fun BankingScreen(
     var communityGuideOpen by remember { mutableStateOf(false) }
     var selectedBankMonth by remember { mutableStateOf(YearMonth.now()) }
     var selectedAdditionalAccountTypes by remember { mutableStateOf(setOf("SECURITY")) }
+    var transactionQuery by rememberSaveable { mutableStateOf("") }
     val requestedAccountTypes = listOf("CHECKING") + listOf("SAVINGS", "CREDIT_CARD", "SECURITY").filter { it in selectedAdditionalAccountTypes }
+    val normalizedTransactionQuery = transactionQuery.trim().lowercase()
+    val visibleTransactions = transactions.filter { transaction ->
+        normalizedTransactionQuery.isBlank() || listOf(
+            transaction.counterparty,
+            transaction.description,
+            transaction.reference,
+            transaction.accountIban,
+            transaction.date,
+            transaction.userClassification
+        ).any { it.lowercase().contains(normalizedTransactionQuery) }
+    }.sortedByDescending(BankTransaction::date)
     if (confirmDeleteBankProfile) {
         AlertDialog(
             onDismissRequest = { confirmDeleteBankProfile = false },
@@ -277,6 +292,18 @@ fun BankingScreen(
             }
         }
         item { Text("Buchungen", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+        item {
+            androidx.compose.material3.OutlinedTextField(
+                value = transactionQuery,
+                onValueChange = { transactionQuery = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                trailingIcon = { if (transactionQuery.isNotBlank()) androidx.compose.material3.IconButton(onClick = { transactionQuery = "" }) { Icon(Icons.Default.Clear, "Suche löschen") } },
+                label = { Text("Buchungen durchsuchen") },
+                placeholder = { Text("Zahlungspartner, Zweck, Referenz oder Label") }
+            )
+        }
         if (transactions.isEmpty()) item {
             Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -287,7 +314,12 @@ fun BankingScreen(
                 }
             }
         }
-        items(transactions.sortedByDescending(BankTransaction::date), key = BankTransaction::id) { transaction ->
+        if (transactions.isNotEmpty() && visibleTransactions.isEmpty()) item {
+            Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Text("Keine Buchung passt zur Suche.", color = Muted, modifier = Modifier.padding(18.dp))
+            }
+        }
+        items(visibleTransactions, key = BankTransaction::id) { transaction ->
             BankTransactionCard(transaction, invoices, expenses, transactions, onMatchInvoice, onMatchExpense, onClassifyTransaction)
         }
     }

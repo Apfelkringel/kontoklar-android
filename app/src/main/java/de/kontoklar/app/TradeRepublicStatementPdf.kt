@@ -56,6 +56,14 @@ internal fun parseC24StatementText(text: String): ParsedBankStatement {
     data class Pending(val date: String, val amount: Long, val type: String, val details: MutableList<String>)
     val pending = mutableListOf<Pending>()
     var current: Pending? = null
+    fun isC24SummaryOrFooter(line: String): Boolean =
+        line.startsWith("Zusammenfassung", ignoreCase = true) ||
+            line.startsWith("Startsaldo", ignoreCase = true) ||
+            line.startsWith("Kontobelastungen", ignoreCase = true) ||
+            line.startsWith("Kontogutschriften", ignoreCase = true) ||
+            line.startsWith("Endsaldo", ignoreCase = true) ||
+            line.startsWith("C24 Bank", ignoreCase = true) ||
+            line.contains("Seite ", ignoreCase = true)
     fun flush() {
         current?.let(pending::add)
         current = null
@@ -79,14 +87,11 @@ internal fun parseC24StatementText(text: String): ParsedBankStatement {
             current = Pending(date, signed, match.groupValues[3], mutableListOf(match.groupValues[3]))
             return@forEach
         }
+        if (isC24SummaryOrFooter(line)) {
+            flush()
+            return@forEach
+        }
         if (current != null && line.isNotBlank() &&
-            !line.startsWith("Zusammenfassung", ignoreCase = true) &&
-            !line.startsWith("Startsaldo", ignoreCase = true) &&
-            !line.startsWith("Kontobelastungen", ignoreCase = true) &&
-            !line.startsWith("Kontogutschriften", ignoreCase = true) &&
-            !line.startsWith("Endsaldo", ignoreCase = true) &&
-            !line.startsWith("C24 Bank", ignoreCase = true) &&
-            !line.contains("Seite ", ignoreCase = true) &&
             !line.startsWith("IBAN:", ignoreCase = true) &&
             !line.startsWith("BIC:", ignoreCase = true)
         ) current!!.details += line

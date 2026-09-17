@@ -26,6 +26,20 @@ class BankStatementCsvTest {
         assertEquals(25_000L, parsed.transactions[1].amountCents)
     }
 
+    @Test fun importsC24ToStarmoneyCommunityExportColumns() {
+        val csv = "Transaktionstyp;Buchungsdatum;Betrag;Zahlungsempfänger;IBAN;BIC;Verwendungszweck;Beschreibung;Kategorie;Unterkategorie\n" +
+            "Kartenzahlung;03.08.2026;-4,99;Bäckerei Müller;DE89370400440532013000;TESTDEFFXXX;Frühstück;Kartenzahlung;Lebensmittel;Bäckerei\n"
+
+        val parsed = parseBankStatementCsv(ByteArrayInputStream(csv.toByteArray(Charsets.UTF_8)))
+
+        assertEquals(1, parsed.transactions.size)
+        assertEquals(-499L, parsed.transactions.single().amountCents)
+        assertEquals("2026-08-03", parsed.transactions.single().date)
+        assertEquals("Bäckerei Müller", parsed.transactions.single().counterparty)
+        assertTrue(parsed.transactions.single().description.contains("Frühstück"))
+        assertTrue(parsed.transactions.single().description.contains("Kartenzahlung"))
+    }
+
     @Test fun importsComdirectCsvWithBomAndSemicolonDecimal() {
         val csv = "\uFEFF\"Buchungstag\";\"Wertstellung (Valuta)\";\"Vorgang\";\"Buchungstext\";\"Umsatz in EUR\"\r\n" +
             "\"15.09.2026\";\"15.09.2026\";\"SEPA-Lastschrift\";\"Empfänger: Stadtwerke\";\"-87,42\"\r\n"

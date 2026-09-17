@@ -51,14 +51,7 @@ jobs:
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "KontoKlar $GITHUB_REF_NAME"
           sleep 20
       - name: Upload APK release asset
-        uses: softprops/action-gh-release@v2
         env:
-          BANKING_API_BASE_URL: ${{ vars.KONTOKLAR_BANKING_API_BASE_URL }}
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: KontoKlar ${{ github.ref_name }}
-          files: app/build/outputs/apk/release/app-release.apk
-          body: |
-            Automatisierter Android-Build.
-            Live-Banking ist in diesem Build noch deaktiviert; Kontoauszüge können lokal importiert werden.
-            Installation und Updates werden vom Android-System bestätigt.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" app/build/outputs/apk/release/app-release.apk --clobber

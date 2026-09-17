@@ -92,7 +92,9 @@ private data class Entry(val title: String, val subtitle: String, val amount: St
 private data class InvoiceLineInput(val description: String, val amount: String)
 
 private fun Intent.bankStatementUri(): Uri? = when (action) {
-    Intent.ACTION_SEND, Intent.ACTION_VIEW -> getParcelableExtraCompat(Intent.EXTRA_STREAM) ?: data
+    Intent.ACTION_SEND, Intent.ACTION_VIEW -> getParcelableExtraCompat(Intent.EXTRA_STREAM)
+        ?: clipData?.getItemAt(0)?.uri
+        ?: data
     else -> null
 }
 

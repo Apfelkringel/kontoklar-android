@@ -10,6 +10,7 @@ import java.math.RoundingMode
 import java.security.MessageDigest
 import java.text.Normalizer
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.zip.ZipInputStream
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
@@ -207,19 +208,19 @@ fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
         headers.any { it in setOf("buchungstag", "buchungsdatum", "bookingdate", "date", "datum") } &&
             headers.any {
                 it.contains("umsatzineur") || it == "betrag" || it == "amount" || it == "value" ||
-                    it.contains("zahlungseingang")
+                    it == "wert" || it.contains("zahlungseingang")
             }
     }
     require(headerIndex >= 0) { "Die CSV-Datei sieht nicht wie ein unterstützter C24- oder comdirect-Umsatzexport aus." }
     val headers = rows[headerIndex].map(::normalizeBankCsvHeader)
     fun column(vararg names: String): Int = headers.indexOfFirst { it in names }
     val dateColumn = column("buchungstag", "buchungsdatum", "bookingdate", "date", "datum")
-    val amountColumn = column("umsatzineur", "betrag", "amount", "value")
+    val amountColumn = column("umsatzineur", "betrag", "amount", "value", "wert")
     val creditColumn = headers.indexOfFirst { it.contains("zahlungseingang") || it == "credit" }
     val debitColumn = headers.indexOfFirst { it.contains("zahlungsausgang") || it == "debit" }
     val typeColumn = headers.indexOfFirst { it in setOf("transaktionstyp", "vorgang", "umsatzart", "typ", "type") }
     val counterpartyColumn = headers.indexOfFirst {
-        it in setOf("zahlungsempfanger", "empfanger", "auftraggeber", "gegenkonto", "counterparty", "name", "note")
+        it in setOf("zahlungsempfanger", "empfanger", "auftraggeber", "gegenkonto", "counterparty", "name", "note", "notiz")
     }
     val purposeColumns = headers.mapIndexedNotNull { index, header ->
         index.takeIf { header in setOf("verwendungszweck", "buchungstext", "beschreibung", "purpose", "description", "remittance") }
@@ -313,6 +314,7 @@ private fun normalizeBankCsvHeader(value: String): String = Normalizer.normalize
     .replace(Regex("\\p{M}+"), "").lowercase().filter(Char::isLetterOrDigit)
 
 private fun parseBankCsvDate(value: String): String? = runCatching { LocalDate.parse(value.trim()).toString() }.getOrNull()
+    ?: runCatching { DateTimeFormatter.ISO_DATE_TIME.parse(value.trim(), LocalDate::from).toString() }.getOrNull()
     ?: runCatching {
         val parts = value.trim().split('.', '/')
         require(parts.size == 3)

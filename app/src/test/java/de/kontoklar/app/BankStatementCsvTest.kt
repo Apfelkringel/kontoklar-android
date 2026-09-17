@@ -78,6 +78,19 @@ class BankStatementCsvTest {
         assertEquals(1_234L, parsed.transactions[1].amountCents)
     }
 
+    @Test fun importsGermanPytrExportWithIsoTimestampAndLocalizedHeaders() {
+        val csv = "Datum;Typ;Wert;Notiz;ISIN;Stück;Gebühren;Steuern\n" +
+            "2026-09-16T16:32:07;Kartenzahlung;-3.002,80;Supermarkt;;;;\n"
+
+        val parsed = parseBankStatementCsv(ByteArrayInputStream(csv.toByteArray(Charsets.UTF_8)))
+
+        assertEquals(1, parsed.transactions.size)
+        assertEquals("2026-09-16", parsed.transactions.single().date)
+        assertEquals(-300_280L, parsed.transactions.single().amountCents)
+        assertEquals("Supermarkt", parsed.transactions.single().counterparty)
+        assertTrue(parsed.transactions.single().description.contains("Kartenzahlung"))
+    }
+
     @Test fun rejectsUnknownExportsAndRowsWithInvalidAmounts() {
         val unknown = "name;sum\nA;12,00"
         assertTrue(runCatching { parseBankStatementCsv(ByteArrayInputStream(unknown.toByteArray())) }.isFailure)

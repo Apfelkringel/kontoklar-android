@@ -51,4 +51,11 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             --title "KontoKlar $GITHUB_REF_NAME" \
             --notes "Automatisierter Android-Build. $BANKING_NOTE Installation und Updates werden vom Android-System bestätigt."
-          timeout 10m gh release upload "$GITHUB_REF_NAME" app/build/outputs/apk/release/app-release.apk --clobber
+          for attempt in 1 2 3; do
+            if timeout 10m gh release upload "$GITHUB_REF_NAME" app/build/outputs/apk/release/app-release.apk --clobber; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then sleep 20; fi
+          done
+          echo "GitHub konnte das APK nach drei Versuchen nicht als Release-Asset speichern." >&2
+          exit 1

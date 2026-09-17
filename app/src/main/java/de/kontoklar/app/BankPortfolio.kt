@@ -27,3 +27,11 @@ data class BankSecurityPosition(
     val profitOrLossMinor: Long?,
     val quoteDate: String
 )
+
+data class BankEuroTotals(val accountBalanceMinor: Long, val portfolioValueMinor: Long)
+
+internal fun euroBankTotals(accounts: List<BankAccountSummary>, securities: List<BankSecurityPosition>): BankEuroTotals =
+    BankEuroTotals(
+        accountBalanceMinor = accounts.filter { it.currency.equals("EUR", ignoreCase = true) }.mapNotNull { it.balanceMinor }.sum(),
+        portfolioValueMinor = securities.filter { it.marketValueCurrency.equals("EUR", ignoreCase = true) }.mapNotNull { it.marketValueMinor }.sum()
+    )

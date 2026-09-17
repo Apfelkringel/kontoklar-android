@@ -1038,8 +1038,7 @@ private fun Dashboard(
             }
         }
         if (bankAccounts.isNotEmpty() || bankSecurities.isNotEmpty()) item {
-            val accountBalances = bankAccounts.mapNotNull { it.balanceMinor }.sum()
-            val portfolioValue = bankSecurities.mapNotNull { it.marketValueMinor }.sum()
+            val euroTotals = euroBankTotals(bankAccounts, bankSecurities)
             Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(20.dp)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1047,8 +1046,8 @@ private fun Dashboard(
                         TextButton(onClick = { onNavigate(Page.Banking) }) { Text("Details", color = Forest) }
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        MetricCard("Konten", formatEuro(accountBalances), "${bankAccounts.size} verbunden", Icons.Default.AccountBalanceWallet, Modifier.weight(1f))
-                        MetricCard("Depot", formatEuro(portfolioValue), "${bankSecurities.size} Positionen", Icons.Default.ShowChart, Modifier.weight(1f))
+                        MetricCard("Konten", formatEuro(euroTotals.accountBalanceMinor), "${bankAccounts.size} verbunden", Icons.Default.AccountBalanceWallet, Modifier.weight(1f))
+                        MetricCard("Depot", formatEuro(euroTotals.portfolioValueMinor), "${bankSecurities.size} Positionen", Icons.Default.ShowChart, Modifier.weight(1f))
                     }
                     Text("Nur EUR-Werte aus dem letzten Import/Abruf; keine Rendite- oder Steuerberechnung.", color = Muted, fontSize = 10.sp)
                 }

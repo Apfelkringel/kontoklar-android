@@ -9,6 +9,19 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 class BankStatementCsvTest {
+    @Test fun overviewTotalsDoNotMixCurrencies() {
+        val accounts = listOf(
+            BankAccountSummary("eur", "local", "EUR", "CHECKING", "EUR", 10_000L, ""),
+            BankAccountSummary("usd", "local", "USD", "CHECKING", "USD", 99_999L, "")
+        )
+        val positions = listOf(
+            BankSecurityPosition("eur-pos", "eur", "local", "ETF", "IE00", "", 1.0, "Stück", "", null, "", 20_000L, "EUR", null, ""),
+            BankSecurityPosition("usd-pos", "eur", "local", "ETF", "US00", "", 1.0, "Stück", "", null, "", 88_888L, "USD", null, "")
+        )
+
+        assertEquals(BankEuroTotals(10_000L, 20_000L), euroBankTotals(accounts, positions))
+    }
+
     @Test fun importsC24CsvWithQuotedSeparatorsAndGermanAmounts() {
         val csv = """Transaktionstyp;Buchungsdatum;Betrag;Zahlungsempfänger;IBAN;Verwendungszweck;Beschreibung
             SEPA-Überweisung;16.09.2026;-1.234,56;Lieferant GmbH;DE89370400440532013000;Rechnung 42;"Material; dringend"

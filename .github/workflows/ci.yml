@@ -29,6 +29,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
       - name: Test and assemble debug APK
         run: ./gradlew testDebugUnitTest assembleDebug assembleDebugAndroidTest
+      - name: Run Android instrumentation tests on API 36
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 36
+          arch: x86_64
+          profile: pixel_6
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: ./gradlew connectedDebugAndroidTest
 
   banking-api:
     runs-on: ubuntu-latest

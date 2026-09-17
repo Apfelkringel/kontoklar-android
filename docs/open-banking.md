@@ -8,7 +8,7 @@ Der Android-Client speichert einen zufälligen Installationsschlüssel in versch
 
 ## Kostenloser Modus
 
-Für einen dauerhaft kostenlosen Betrieb bleibt die API-Basisadresse leer. Dann werden CAMT.053, C24-/comdirect-CSV, C24-Excel-Dateien und Trade-Republic-Kontoauszugs-PDFs vollständig lokal verarbeitet; es entstehen weder finAPI- noch Cloudflare-Banking-Kosten und es werden keine Bank-Zugangsdaten benötigt. Eine automatische Live-Synchronisierung mehrerer Banken ist davon getrennt und benötigt einen externen Anbieter mit eigenen Vertragsbedingungen.
+Für einen dauerhaft kostenlosen Betrieb bleibt die API-Basisadresse leer. Dann werden CAMT.053, MT940/Swift, C24-/comdirect-CSV, C24-Excel-Dateien und Trade-Republic-Kontoauszugs-PDFs vollständig lokal verarbeitet; es entstehen weder finAPI- noch Cloudflare-Banking-Kosten und es werden keine Bank-Zugangsdaten benötigt. Eine automatische Live-Synchronisierung mehrerer Banken ist davon getrennt und benötigt einen externen Anbieter mit eigenen Vertragsbedingungen.
 
 ## Eigene kostenlose Lösung statt Aggregator
 

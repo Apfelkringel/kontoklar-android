@@ -24,11 +24,12 @@ Ein Community-Client kann Softwarekosten vermeiden, ersetzt aber weder die Bankf
 
 ## Trade-Republic-Workflow ohne Kosten
 
-1. `pytr` auf dem eigenen Rechner installieren und den TR-Login dort selbst bestätigen.
-2. Mit `pytr dl_docs ./tr-export` oder `pytr export_transactions` die `account_transactions.csv` erzeugen.
-3. In KontoKlar die CSV auswählen. Die Datei wird ausschließlich auf dem Android-Gerät verarbeitet.
+1. Auf dem eigenen Rechner [uv](https://docs.astral.sh/uv/) installieren und `uvx pytr@latest` verwenden; alternativ pytr nach der Projektanleitung installieren.
+2. `uvx pytr@latest login` starten und die Freigabe ausschließlich in der eigenen Trade-Republic-App bzw. dem eigenen Authenticator bestätigen. Zugangsdaten und Codes niemals in KontoKlar eingeben.
+3. Mit `uvx pytr@latest export_transactions` die `account_transactions.csv` erzeugen. `uvx pytr@latest dl_docs ./tr-export` erzeugt zusätzlich Dokumente und ebenfalls den Transaktionsexport.
+4. In KontoKlar die CSV auswählen. Die Datei wird ausschließlich auf dem Android-Gerät verarbeitet.
 
-Das pytr-CSV ist ein Community-Export und kann sich ändern. KontoKlar akzeptiert nur eindeutig erkennbare Buchungszeilen und rät bei Fehlern zu einem neuen Export; PINs, SMS-Codes, Cookies und JSON-Rohdaten werden nicht importiert.
+Das pytr-CSV ist ein Community-Export auf Basis privater Trade-Republic-Endpunkte und kann sich ändern. KontoKlar akzeptiert nur eindeutig erkennbare Buchungszeilen und rät bei Fehlern zu einem neuen Export; PINs, SMS-Codes, Cookies und JSON-Rohdaten werden nicht importiert. pytr unterstützt laut eigener Dokumentation weiterhin den Web-Login per `login` und optional `login --v2`; die Freigabe bleibt vollständig außerhalb von KontoKlar.
 
 ## Quellen
 

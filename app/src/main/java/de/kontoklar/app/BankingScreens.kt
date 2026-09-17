@@ -100,7 +100,7 @@ fun BankingScreen(
                     Text("CSV-Export direkt importieren. Für das kostenlose eigene API-Konto Clientdaten bei comdirect registrieren; PIN und Client-Secret gehören niemals in KontoKlar.", color = Muted, fontSize = 11.sp)
                     TextButton(onClick = onOpenComdirectApi) { Text("comdirect API öffnen") }
                     Text("Trade Republic", color = Ink, fontWeight = FontWeight.Bold)
-                    Text("Kontoauszug-PDF importieren oder außerhalb der App mit pytr export_transactions eine CSV erzeugen.", color = Muted, fontSize = 11.sp)
+                    Text("Kontoauszug-PDF importieren oder außerhalb der App mit dem kostenlosen pytr-Tool eine CSV erzeugen. Empfohlen: uvx pytr@latest, dann pytr login und pytr export_transactions.", color = Muted, fontSize = 11.sp)
                     TextButton(onClick = { onOpenCommunityUrl("https://github.com/pytr-org/pytr") }) { Text("pytr auf GitHub öffnen") }
                 }
             },

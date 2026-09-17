@@ -31,7 +31,11 @@ fun parseBankStatement(input: InputStream, context: Context? = null): ParsedBank
         return parseBankStatementXlsx(buffered)
     }
     val start = head.firstOrNull { !it.toInt().toChar().isWhitespace() && it != 0xEF.toByte() && it != 0xBB.toByte() && it != 0xBF.toByte() }
-    return if (start == '<'.code.toByte()) parseCamt053(buffered) else parseBankStatementCsv(buffered)
+    return when {
+        start == '<'.code.toByte() -> parseCamt053(buffered)
+        String(head, Charsets.US_ASCII).contains(":61:") -> parseMt940(buffered)
+        else -> parseBankStatementCsv(buffered)
+    }
 }
 
 /** Reads the first worksheet of an Excel .xlsx export entirely on-device. */

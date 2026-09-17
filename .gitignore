@@ -17,3 +17,4 @@ banking-api/.env.*
 *.keystore
 # Local source bundles uploaded to Drive; never commit generated archives.
 KontoKlar-Android-*-source.zip
+/releases/

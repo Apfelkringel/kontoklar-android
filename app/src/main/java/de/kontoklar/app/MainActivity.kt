@@ -347,7 +347,7 @@ private fun KontoKlarApp() {
         Column(Modifier.fillMaxSize().padding(padding)) {
             Header(page.title, profile)
             when (page) {
-                Page.Home -> Dashboard(invoices, expenses, bankTransactions, onNavigate = { page = it })
+                Page.Home -> Dashboard(invoices, expenses, bankTransactions, bankAccounts, bankSecurities, onNavigate = { page = it })
                 Page.Invoices -> InvoiceScreen(invoices, onAction = { dialog = it }, onSelect = { selectedInvoice = it })
                 Page.Expenses -> ExpenseScreen(expenses, onAction = { action ->
                     if (action == "E-Rechnung empfangen") incomingInvoiceLauncher.launch(arrayOf("*/*")) else dialog = action
@@ -987,7 +987,14 @@ private fun Header(title: String, profile: BusinessProfile) {
 }
 
 @Composable
-private fun Dashboard(invoices: List<Invoice>, expenses: List<Expense>, bankTransactions: List<BankTransaction>, onNavigate: (Page) -> Unit) {
+private fun Dashboard(
+    invoices: List<Invoice>,
+    expenses: List<Expense>,
+    bankTransactions: List<BankTransaction>,
+    bankAccounts: List<BankAccountSummary>,
+    bankSecurities: List<BankSecurityPosition>,
+    onNavigate: (Page) -> Unit
+) {
     var selectedYear by remember { mutableIntStateOf(LocalDate.now().year) }
     val report = remember(selectedYear, invoices, expenses) { taxYearReport(selectedYear, invoices, expenses) }
     val monthlyTotals = remember(selectedYear, invoices, expenses) { financialYearTrend(selectedYear, invoices, expenses) }
@@ -1028,6 +1035,23 @@ private fun Dashboard(invoices: List<Invoice>, expenses: List<Expense>, bankTran
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 MetricCard("Rechnungen", formatEuro(invoiceTotal), "${report.issuedInvoiceCount} ausgestellt", Icons.Default.TrendingUp, Modifier.weight(1f))
                 MetricCard("Ausgaben", formatEuro(expenseTotal), "${expenses.count { runCatching { LocalDate.parse(it.date).year == selectedYear }.getOrDefault(false) }} erfasst", Icons.Default.Receipt, Modifier.weight(1f))
+            }
+        }
+        if (bankAccounts.isNotEmpty() || bankSecurities.isNotEmpty()) item {
+            val accountBalances = bankAccounts.mapNotNull { it.balanceMinor }.sum()
+            val portfolioValue = bankSecurities.mapNotNull { it.marketValueMinor }.sum()
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(20.dp)) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Vermögen", color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { onNavigate(Page.Banking) }) { Text("Details", color = Forest) }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        MetricCard("Konten", formatEuro(accountBalances), "${bankAccounts.size} verbunden", Icons.Default.AccountBalanceWallet, Modifier.weight(1f))
+                        MetricCard("Depot", formatEuro(portfolioValue), "${bankSecurities.size} Positionen", Icons.Default.ShowChart, Modifier.weight(1f))
+                    }
+                    Text("Nur EUR-Werte aus dem letzten Import/Abruf; keine Rendite- oder Steuerberechnung.", color = Muted, fontSize = 10.sp)
+                }
             }
         }
         item {

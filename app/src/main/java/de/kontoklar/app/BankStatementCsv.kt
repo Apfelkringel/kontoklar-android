@@ -230,6 +230,9 @@ fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
     val counterpartyColumn = headers.indexOfFirst {
         it in setOf("zahlungsempfanger", "empfanger", "auftraggeber", "gegenkonto", "counterparty", "name", "note", "notiz")
     }
+    val counterpartyNameColumn = headers.indexOfFirst { it in setOf("counterpartyname", "gegenparteiname") }
+    val referenceColumn = headers.indexOfFirst { it in setOf("paymentreference", "zahlungsreferenz", "referenz") }
+    val detailColumn = headers.indexOfFirst { it in setOf("description", "beschreibung", "details") }
     val purposeColumns = headers.mapIndexedNotNull { index, header ->
         index.takeIf { header in setOf("verwendungszweck", "buchungstext", "beschreibung", "purpose", "description", "remittance") }
     }
@@ -267,8 +270,8 @@ fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
         if (signedAmount == 0L) return@mapNotNull null
         require(signedAmount != 0L) { "Eine CSV-Buchung enthält keinen Betrag." }
         val type = value(typeColumn)
-        val counterparty = value(counterpartyColumn)
-        val purpose = purposeColumns.map(::value).filter(String::isNotBlank).distinct()
+        val counterparty = value(counterpartyColumn).ifBlank { value(counterpartyNameColumn) }
+        val purpose = (purposeColumns.map(::value) + listOf(value(detailColumn))).filter(String::isNotBlank).distinct()
         val description = (listOf(type) + purpose).filter(String::isNotBlank).distinct().joinToString(" · ").take(800)
         val iban = value(ibanColumn)
         val sourceId = value(transactionIdColumn)
@@ -292,7 +295,7 @@ fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
         duplicateOrdinals[stableKey] = ordinal + 1
         val id = MessageDigest.getInstance("SHA-256").digest("$stableKey\u001f$ordinal".toByteArray(Charsets.UTF_8))
             .joinToString("") { byte -> "%02x".format(byte) }
-        BankTransaction(id, iban, date, counterparty.ifBlank { "Unbekannter Zahlungspartner" }, description, signedAmount, "")
+        BankTransaction(id, iban, date, counterparty.ifBlank { "Unbekannter Zahlungspartner" }, description, signedAmount, value(referenceColumn))
     }.toList()
     require(parsed.isNotEmpty()) { "Die CSV-Datei enthält keine importierbaren Buchungen." }
     require(parsed.size <= MAX_BANK_CSV_ROWS) { "Die CSV-Datei enthält mehr als $MAX_BANK_CSV_ROWS Buchungen." }

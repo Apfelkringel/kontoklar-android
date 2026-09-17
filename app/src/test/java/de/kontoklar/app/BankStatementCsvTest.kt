@@ -92,14 +92,16 @@ class BankStatementCsvTest {
     }
 
     @Test fun importsNativeTradeRepublicCsvWithNetAmountAndStableId() {
-        val csv = "datetime,date,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,transaction_id\n" +
-            "2026-09-17T10:00:00Z,2026-09-17,TRADING,BUY,STOCK,ETF,IE00B4L5Y983,1,100.00,-100.00,-1.00,-0.25,EUR,tr-42\n"
+        val csv = "datetime,date,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,transaction_id,counterparty_name,payment_reference,description\n" +
+            "2026-09-17T10:00:00Z,2026-09-17,TRADING,BUY,STOCK,ETF,IE00B4L5Y983,1,100.00,-100.00,-1.00,-0.25,EUR,tr-42,,,Sparplan\n"
 
         val parsed = parseBankStatementCsv(ByteArrayInputStream(csv.toByteArray(Charsets.UTF_8)))
 
         assertEquals(1, parsed.transactions.size)
         assertEquals(-10_125L, parsed.transactions.single().amountCents)
         assertTrue(parsed.transactions.single().description.contains("BUY"))
+        assertTrue(parsed.transactions.single().description.contains("Sparplan"))
+        assertEquals("", parsed.transactions.single().reference)
         assertEquals(1, parsed.securities.size)
         assertEquals("IE00B4L5Y983", parsed.securities.single().isin)
         assertEquals(1.0, parsed.securities.single().quantityNominal!!, 0.000001)

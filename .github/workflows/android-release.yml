@@ -38,6 +38,12 @@ jobs:
         env:
           KONTOKLAR_BANKING_API_BASE_URL: ${{ vars.KONTOKLAR_BANKING_API_BASE_URL }}
         run: ./gradlew testDebugUnitTest assembleDebugAndroidTest assembleRelease
+      - name: Store signed APK as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KontoKlar-${{ github.ref_name }}-signed-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
       - name: Publish APK release
         env:
           GH_TOKEN: ${{ github.token }}

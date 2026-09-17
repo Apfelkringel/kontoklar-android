@@ -27,6 +27,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -68,7 +69,8 @@ fun BankingScreen(
     onOpenCommunityUrl: (String) -> Unit,
     onMatchInvoice: (BankTransaction, Invoice) -> Unit,
     onMatchExpense: (BankTransaction, Expense) -> Unit,
-    onClassifyTransaction: (BankTransaction, String) -> Unit
+    onClassifyTransaction: (BankTransaction, String) -> Unit,
+    onDeleteTransaction: (BankTransaction) -> Unit
 ) {
     val credits = transactions.filter { it.amountCents > 0 }
     val debits = transactions.filter { it.amountCents < 0 }
@@ -340,7 +342,7 @@ fun BankingScreen(
             }
         }
         items(visibleTransactions, key = BankTransaction::id) { transaction ->
-            BankTransactionCard(transaction, invoices, expenses, transactions, onMatchInvoice, onMatchExpense, onClassifyTransaction)
+            BankTransactionCard(transaction, invoices, expenses, transactions, onMatchInvoice, onMatchExpense, onClassifyTransaction, onDeleteTransaction)
         }
     }
 }
@@ -366,7 +368,8 @@ private fun BankTransactionCard(
     transactions: List<BankTransaction>,
     onMatchInvoice: (BankTransaction, Invoice) -> Unit,
     onMatchExpense: (BankTransaction, Expense) -> Unit,
-    onClassifyTransaction: (BankTransaction, String) -> Unit
+    onClassifyTransaction: (BankTransaction, String) -> Unit,
+    onDeleteTransaction: (BankTransaction) -> Unit
 ) {
     val amountColor = if (transaction.amountCents >= 0) Forest else Ink
     val linkedInvoice = invoices.firstOrNull { it.id == transaction.matchedInvoiceId }
@@ -376,6 +379,7 @@ private fun BankTransactionCard(
     var confirmMatch by remember(transaction.id) { mutableStateOf(false) }
     var confirmExpenseMatch by remember(transaction.id) { mutableStateOf(false) }
     var classificationDialog by remember(transaction.id) { mutableStateOf(false) }
+    var confirmDelete by remember(transaction.id) { mutableStateOf(false) }
     if (confirmMatch && suggestion != null) {
         AlertDialog(
             onDismissRequest = { confirmMatch = false },
@@ -419,6 +423,13 @@ private fun BankTransactionCard(
             dismissButton = { TextButton(onClick = { classificationDialog = false }) { Text("Schließen") } }
         )
     }
+    if (confirmDelete) AlertDialog(
+        onDismissRequest = { confirmDelete = false },
+        title = { Text("Bankumsatz löschen?") },
+        text = { Text("Der lokale Bankumsatz von ${transaction.counterparty} über ${formatEuro(kotlin.math.abs(transaction.amountCents))} wird von diesem Gerät entfernt. Ein erneuter Import kann ihn wieder hinzufügen.") },
+        confirmButton = { TextButton(onClick = { confirmDelete = false; onDeleteTransaction(transaction) }) { Text("Löschen", color = MaterialTheme.colorScheme.error) } },
+        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Abbrechen") } }
+    )
     Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
         Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.Top) {
@@ -452,6 +463,9 @@ private fun BankTransactionCard(
             if (transaction.matchedInvoiceId == null && transaction.matchedExpenseId == null) {
                 OutlinedButton(onClick = { classificationDialog = true }, modifier = Modifier.fillMaxWidth()) {
                     Text(if (transaction.userClassification.isBlank()) "Als privat/geschäftlich kennzeichnen" else "Kennzeichnung ändern", color = Forest)
+                }
+                OutlinedButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                    Text("Lokalen Bankumsatz löschen")
                 }
             }
         }

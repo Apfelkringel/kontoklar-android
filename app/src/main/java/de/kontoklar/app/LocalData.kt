@@ -475,6 +475,17 @@ class LocalData(context: Context) {
         }
     }
 
+    fun deleteUnmatchedBankTransaction(transactionId: String) {
+        val current = bankTransactions()
+        val transaction = current.firstOrNull { it.id == transactionId } ?: error("Der Bankumsatz ist nicht mehr vorhanden.")
+        require(transaction.matchedInvoiceId == null && transaction.matchedExpenseId == null) {
+            "Ein abgeglichener Bankumsatz kann nicht gelöscht werden. Entferne zuerst die Zuordnung."
+        }
+        check(prefs.putString("bank_transactions", JSONArray(current.filterNot { it.id == transactionId }.map(::bankTransactionToJson)).toString())) {
+            "Bankumsatz konnte nicht gelöscht werden."
+        }
+    }
+
     fun recordInvoicePayment(
         invoiceId: String,
         amountCents: Long,

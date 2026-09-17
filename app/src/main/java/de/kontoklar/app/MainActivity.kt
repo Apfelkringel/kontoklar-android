@@ -576,6 +576,11 @@ private fun KontoKlarApp() {
                                 toast = if (classification.isBlank()) "Kennzeichnung entfernt" else "Bankumsatz als „$classification“ markiert"
                             }
                             .onFailure { toast = it.message ?: "Kennzeichnung konnte nicht gespeichert werden." }
+                    },
+                    onDeleteTransaction = { transaction ->
+                        runCatching { store.deleteUnmatchedBankTransaction(transaction.id) }
+                            .onSuccess { bankTransactions = store.bankTransactions(); toast = "Lokaler Bankumsatz gelöscht" }
+                            .onFailure { toast = it.message ?: "Bankumsatz konnte nicht gelöscht werden." }
                     }
                 )
             }

@@ -48,6 +48,10 @@ Native Android app prototype built with Kotlin and Jetpack Compose. The app uses
 - Android's system installer confirms package updates; it requires the one-time "Install unknown apps" permission.
 - Clear distinction between local records and external banking/tax services.
 
+## Kostenloser Betrieb
+
+KontoKlar ist dauerhaft ohne Abo nutzbar, wenn Kontoauszüge lokal importiert werden. Unterstützt werden CAMT.053, C24-/comdirect-CSV, C24-Excel (.xlsx) und Trade-Republic-Kontoauszüge als PDF; die Verarbeitung erfolgt auf dem Android-Gerät und benötigt keine Bank-Zugangsdaten. Die automatische Live-Synchronisierung über einen Open-Banking-Aggregator ist optional und kann Anbieter-/Lizenzkosten verursachen. Es gibt keine versteckte Umstellung auf einen kostenpflichtigen Dienst.
+
 ## Not implemented yet
 
 The live Open Banking Android integration requires a deployed HTTPS backend and an approved provider account, neither of which is configured yet; until then, use local statement import. Provider coverage for C24, comdirect depots and Trade Republic must be confirmed against the actual provider account before release. See [docs/open-banking.md](docs/open-banking.md) for the API contract and production gates. There is no account/login or cloud sync, automatic bank transaction synchronization, actual automatic transfer of tax reserves, PEPPOL network delivery, tax-return calculation or submission, or accountant collaboration. XRechnung export currently supports limited multi-position domestic German invoices with one German VAT-ID and a single positive standard VAT rate; tax-number-only profiles, tax exemptions, small-business invoices, cross-border/reverse-charge cases, and government procurement routing are not supported. Review every XML and validate it with the official KoSIT validator before use; the export is not legal or tax advice. OCR is local and heuristic and always requires user review. Invoice PDFs remain clearly marked as incomplete drafts. The tax screen is informational and does not submit declarations or provide binding calculations.

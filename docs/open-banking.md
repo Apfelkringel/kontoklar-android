@@ -6,6 +6,10 @@ Die Android-App spricht ausschließlich mit KontoKlars HTTPS-Backend. Im Backend
 
 Der Android-Client speichert einen zufälligen Installationsschlüssel in verschlüsselten App-Einstellungen und sendet ihn nur an die konfigurierte HTTPS-API. Ohne API-Basisadresse und korrekt eingerichtetes Backend bleiben Live-Verbindungen aus; lokaler CAMT.053-/CSV-/XLSX-/PDF-Import funktioniert unabhängig davon. Der C24-Excel-Import liest das erste Tabellenblatt lokal, begrenzt die Datei und akzeptiert nur erkannte Buchungsdatum-/Betragsspalten.
 
+## Kostenloser Modus
+
+Für einen dauerhaft kostenlosen Betrieb bleibt die API-Basisadresse leer. Dann werden CAMT.053, C24-/comdirect-CSV, C24-Excel-Dateien und Trade-Republic-Kontoauszugs-PDFs vollständig lokal verarbeitet; es entstehen weder finAPI- noch Cloudflare-Banking-Kosten und es werden keine Bank-Zugangsdaten benötigt. Eine automatische Live-Synchronisierung mehrerer Banken ist davon getrennt und benötigt einen externen Anbieter mit eigenen Vertragsbedingungen.
+
 ## Lokales Prüfen
 
 Im Projektordner:

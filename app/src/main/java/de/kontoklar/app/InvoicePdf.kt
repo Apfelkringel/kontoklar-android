@@ -9,9 +9,14 @@ import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
 
-fun shareInvoiceDraft(context: Context, invoice: Invoice, profile: BusinessProfile) {
+fun shareInvoicePdf(context: Context, invoice: Invoice, profile: BusinessProfile) {
+    val finalInvoice = invoice.status != "Entwurf"
+    if (finalInvoice) {
+        val errors = finalInvoiceValidationErrors(invoice, profile)
+        require(errors.isEmpty()) { "Rechnung kann noch nicht final erstellt werden: ${errors.joinToString(" ")}" }
+    }
     val directory = File(context.filesDir, "invoices").apply { mkdirs() }
-    val file = File(directory, "${invoice.number.ifBlank { invoice.id }}-ENTWURF.pdf")
+    val file = File(directory, "${invoice.number.ifBlank { invoice.id }}-${if (finalInvoice) "RECHNUNG" else "ENTWURF"}.pdf")
     val document = PdfDocument()
     try {
         var pageNumber = 1
@@ -25,9 +30,9 @@ fun shareInvoiceDraft(context: Context, invoice: Invoice, profile: BusinessProfi
         val vatRatePercent = invoice.vatRatePercent ?: profile.vatRatePercent
         val amounts = invoiceTaxBreakdown(invoice, vatRatePercent)
         canvas.drawText(profile.businessName.ifBlank { "KontoKlar" }.take(45), 42f, 54f, green)
-        canvas.drawText("RECHNUNGSENTWURF", 42f, 105f, title)
+        canvas.drawText(if (finalInvoice) "RECHNUNG" else "RECHNUNGSENTWURF", 42f, 105f, title)
         canvas.drawText(invoice.number.ifBlank { "Rechnungsnummer nicht vergeben" }, 42f, 128f, muted)
-        canvas.drawText("NICHT VERSENDET · NICHT ALS STEUERDOKUMENT VERWENDEN", 42f, 148f, muted)
+        if (!finalInvoice) canvas.drawText("NICHT VERSENDET · NICHT ALS STEUERDOKUMENT VERWENDEN", 42f, 148f, muted)
 
         canvas.drawText("Rechnungsaussteller", 42f, 188f, heading)
         var sellerY = 211f
@@ -61,7 +66,7 @@ fun shareInvoiceDraft(context: Context, invoice: Invoice, profile: BusinessProfi
             pageNumber += 1
             page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNumber).create())
             canvas = page.canvas
-            canvas.drawText("RECHNUNGSENTWURF · FORTSETZUNG", 42f, 54f, heading)
+            canvas.drawText(if (finalInvoice) "RECHNUNG · FORTSETZUNG" else "RECHNUNGSENTWURF · FORTSETZUNG", 42f, 54f, heading)
             canvas.drawText(invoice.number, 42f, 74f, muted)
             drawTableHeader(92f)
             return 145f
@@ -87,14 +92,20 @@ fun shareInvoiceDraft(context: Context, invoice: Invoice, profile: BusinessProfi
         canvas.drawText("Umsatzsteuer ($vatRatePercent %)", 370f, y, normal); canvas.drawText(formatEuro(amounts.vatCents), 480f, y, normal)
         y += 24f
         canvas.drawText("Gesamtbetrag", 370f, y, heading); canvas.drawText(formatEuro(amounts.grossCents), 480f, y, heading)
+        if (finalInvoice && invoice.paidCents > 0L) {
+            y += 19f
+            canvas.drawText("Bereits erhalten", 370f, y, normal); canvas.drawText(formatEuro(invoice.paidCents), 480f, y, normal)
+            y += 19f
+            canvas.drawText("Offener Betrag", 370f, y, heading); canvas.drawText(formatEuro(invoiceOutstandingCents(invoice)), 480f, y, heading)
+        }
         if (profile.iban.isNotBlank()) {
             y += 34f
             canvas.drawText("Zahlung per Überweisung", 42f, y, heading)
             canvas.drawText("IBAN: ${profile.iban}", 42f, y + 19f, normal)
             if (profile.businessName.isNotBlank()) canvas.drawText("Empfänger: ${profile.businessName.take(55)}", 42f, y + 37f, normal)
         }
-        canvas.drawText(if (invoice.vatRatePercent == null) "Altentwurf: aktueller Profilsatz verwendet – Steuersatz prüfen." else "Entwurf: Angaben prüfen und vor Versand ergänzen. Nicht als fertige Rechnung verwenden.", 42f, 785f, muted)
-        canvas.drawText("KontoKlar · Arbeitsdokument · Seite $pageNumber", 42f, 805f, muted)
+        if (!finalInvoice) canvas.drawText(if (invoice.vatRatePercent == null) "Altentwurf: aktueller Profilsatz verwendet – Steuersatz prüfen." else "Entwurf: Angaben prüfen und vor Versand ergänzen. Nicht als fertige Rechnung verwenden.", 42f, 785f, muted)
+        canvas.drawText(if (finalInvoice) "KontoKlar · Rechnung · Seite $pageNumber" else "KontoKlar · Arbeitsdokument · Seite $pageNumber", 42f, 805f, muted)
         document.finishPage(page)
         FileOutputStream(file).use(document::writeTo)
     } finally {
@@ -104,11 +115,23 @@ fun shareInvoiceDraft(context: Context, invoice: Invoice, profile: BusinessProfi
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
     val send = Intent(Intent.ACTION_SEND).apply {
         type = "application/pdf"
-        putExtra(Intent.EXTRA_SUBJECT, "Rechnungsentwurf ${invoice.number}")
+        putExtra(Intent.EXTRA_SUBJECT, if (finalInvoice) "Rechnung ${invoice.number}" else "Rechnungsentwurf ${invoice.number}")
         putExtra(Intent.EXTRA_STREAM, uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
-    context.startActivity(Intent.createChooser(send, "Rechnungsentwurf teilen"))
+    context.startActivity(Intent.createChooser(send, if (finalInvoice) "Rechnung teilen" else "Rechnungsentwurf teilen"))
+}
+
+internal fun finalInvoiceValidationErrors(invoice: Invoice, profile: BusinessProfile): List<String> {
+    val errors = mutableListOf<String>()
+    if (invoice.number.isBlank()) errors += "Rechnungsnummer fehlt."
+    if (invoice.customer.isBlank() || invoice.customerAddress.isBlank()) errors += "Empfängername und -adresse fehlen."
+    if (profile.businessName.isBlank() || profile.street.isBlank() || profile.postalCode.isBlank() || profile.city.isBlank()) errors += "Ausstelleradresse ist unvollständig."
+    if (profile.taxNumber.isBlank() && profile.vatId.isBlank()) errors += "Steuernummer oder USt-IdNr. fehlt."
+    if (invoice.vatRatePercent == null) errors += "Der Umsatzsteuersatz muss im Rechnungsstand gespeichert sein."
+    if (invoice.amountCents <= 0L) errors += "Der Gesamtbetrag muss positiv sein."
+    if (!runCatching { invoiceTaxBreakdown(invoice, invoice.vatRatePercent ?: -1) }.isSuccess) errors += "Positionen oder Steuerberechnung sind ungültig."
+    return errors
 }
 
 internal fun wrap(text: String, paint: Paint, maxWidth: Float): List<String> {

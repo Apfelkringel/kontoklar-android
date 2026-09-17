@@ -1,6 +1,7 @@
 package de.kontoklar.app
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class InvoiceAmountsTest {
@@ -25,5 +26,25 @@ class InvoiceAmountsTest {
     @Test(expected = IllegalArgumentException::class)
     fun rejectsNegativeGrossAmount() {
         invoiceAmountBreakdown(-1, 19)
+    }
+
+    @Test fun finalInvoiceRequiresAnImmutableTaxSnapshotAndCompleteParties() {
+        val invoice = Invoice(number = "RE-1", customer = "Kundin", description = "Leistung", amountCents = 11_900, status = "Versendet")
+        val profile = BusinessProfile(businessName = "Mein Betrieb", street = "Hauptstraße 1", postalCode = "10115", city = "Berlin", taxNumber = "12/345/67890")
+
+        val errors = finalInvoiceValidationErrors(invoice, profile)
+
+        assertTrue(errors.any { it.contains("Empfänger") })
+        assertTrue(errors.any { it.contains("Steuersatz", ignoreCase = true) })
+    }
+
+    @Test fun completeFinalInvoicePassesPdfValidation() {
+        val invoice = Invoice(
+            number = "RE-2", customer = "Kundin", customerAddress = "Kundenweg 2\n10117 Berlin",
+            description = "Leistung", amountCents = 11_900, status = "Versendet", vatRatePercent = 19
+        )
+        val profile = BusinessProfile(businessName = "Mein Betrieb", street = "Hauptstraße 1", postalCode = "10115", city = "Berlin", taxNumber = "12/345/67890")
+
+        assertTrue(finalInvoiceValidationErrors(invoice, profile).isEmpty())
     }
 }

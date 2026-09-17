@@ -802,7 +802,7 @@ private fun KontoKlarApp() {
                         .onSuccess { pendingInvoiceXml = it; invoiceXmlExportLauncher.launch("${invoice.number.ifBlank { "rechnung" }}.xml") }
                         .onFailure { toast = it.message ?: "XRechnung konnte nicht erstellt werden." }
                 },
-                onSharePdf = { runCatching { shareInvoiceDraft(context, invoice, profile) }.onFailure { toast = "PDF konnte nicht erstellt werden: ${it.message}" } },
+                onSharePdf = { runCatching { shareInvoicePdf(context, invoice, profile) }.onFailure { toast = "PDF konnte nicht erstellt werden: ${it.message}" } },
                 onEdit = { invoiceToEdit = invoice; selectedInvoice = null; dialog = "Rechnung bearbeiten" },
                 onDelete = { invoiceToDelete = invoice; selectedInvoice = null },
                 onRegisterPayment = { cents ->
@@ -1523,14 +1523,14 @@ private fun InvoiceDetailsDialog(
                     }
                     Text("Öffnet eine bearbeitbare Nachricht in deiner E-Mail-App. KontoKlar versendet nichts automatisch.", color = Muted, fontSize = 11.sp)
                 }
-                Text("Das PDF wird ausdrücklich als unvollständiger Entwurf gekennzeichnet.", color = Muted, fontSize = 11.sp)
+                Text(if (invoice.status == "Entwurf") "Das PDF wird ausdrücklich als unvollständiger Entwurf gekennzeichnet." else "Für versendete Rechnungen wird ein finaler PDF-Stand mit Rechnungsnummer und gespeicherten Steuerdaten erzeugt.", color = Muted, fontSize = 11.sp)
                 val xmlErrors = XRechnung.validationErrors(invoice, profile)
                 OutlinedButton(onClick = onExportXml, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Code, null); Spacer(Modifier.width(8.dp)); Text("XRechnung-XML speichern")
                 }
                 Text(if (xmlErrors.isEmpty()) "${invoiceLines(invoice).size} Position(en) · deutsches Inland · Regelsteuersatz" else "Voraussetzungen: ${xmlErrors.joinToString(" ")}", color = Muted, fontSize = 11.sp)
                 OutlinedButton(onClick = onSharePdf, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.PictureAsPdf, null); Spacer(Modifier.width(8.dp)); Text("Entwurfs-PDF teilen")
+                    Icon(Icons.Default.PictureAsPdf, null); Spacer(Modifier.width(8.dp)); Text(if (invoice.status == "Entwurf") "Entwurfs-PDF teilen" else "Finale Rechnung als PDF teilen")
                 }
                 if (invoice.status == "Entwurf") {
                     OutlinedButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) {

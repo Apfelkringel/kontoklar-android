@@ -48,6 +48,7 @@ jobs:
           else
             BANKING_NOTE="Live-Banking ist in diesem Build noch deaktiviert. Kontoauszüge können lokal importiert werden."
           fi
-          gh release create "$GITHUB_REF_NAME" app/build/outputs/apk/release/app-release.apk \
+          gh release create "$GITHUB_REF_NAME" \
             --title "KontoKlar $GITHUB_REF_NAME" \
             --notes "Automatisierter Android-Build. $BANKING_NOTE Installation und Updates werden vom Android-System bestätigt."
+          timeout 10m gh release upload "$GITHUB_REF_NAME" app/build/outputs/apk/release/app-release.apk --clobber

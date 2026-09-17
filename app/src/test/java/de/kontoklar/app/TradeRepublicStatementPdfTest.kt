@@ -5,6 +5,35 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TradeRepublicStatementPdfTest {
+    @Test fun importsC24StatementRowsAndContinuationLines() {
+        val text = """
+            C24 Bank GmbH
+            C24 Smartkonto
+            IBAN: DE89370400440532013000
+            Kontoauszug 05/2026 Kontostand 1.973,24 €
+            Transaktionsübersicht
+            Buchung Valuta Transaktionsinformation Betrag
+            29.05. 29.05. Online-Kartenzahlung -91,27 €
+            Supermarkt Beispiel
+            28.05. 28.05. Überweisung +7.522,77 €
+            Kundin GmbH
+            IBAN: DE02120300000000202051 / BIC: TESTDEFFXXX
+            Zusammenfassung
+            Startsaldo 1.000,00 €
+            Endsaldo 8.431,50 €
+            C24 Bank GmbH Seite 1 von 1
+        """.trimIndent()
+
+        val parsed = parseC24StatementText(text)
+
+        assertEquals(2, parsed.transactions.size)
+        assertEquals(-9_127L, parsed.transactions[0].amountCents)
+        assertEquals("2026-05-29", parsed.transactions[0].date)
+        assertTrue(parsed.transactions[0].description.contains("Supermarkt Beispiel"))
+        assertEquals(752_277L, parsed.transactions[1].amountCents)
+        assertEquals("Kundin GmbH", parsed.transactions[1].counterparty)
+    }
+
     @Test fun importsCurrentStatementRowsWithIncomingOutgoingAndBalances() {
         val text = """
             TRADE REPUBLIC BANK GMBH

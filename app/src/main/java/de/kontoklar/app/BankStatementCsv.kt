@@ -25,7 +25,7 @@ fun parseBankStatement(input: InputStream, context: Context? = null): ParsedBank
     val head = buffered.readNBytes(512)
     buffered.reset()
     if (head.size >= 5 && String(head.copyOfRange(0, 5), Charsets.US_ASCII) == "%PDF-") {
-        return parseTradeRepublicStatementPdf(buffered, context ?: error("Zum Lesen des Trade-Republic-PDFs wird die Android-PDF-Komponente benötigt."))
+        return parseBankStatementPdf(buffered, context ?: error("Zum Lesen des Kontoauszug-PDFs wird die Android-PDF-Komponente benötigt."))
     }
     if (head.size >= 4 && head[0] == 'P'.code.toByte() && head[1] == 'K'.code.toByte()) {
         return parseBankStatementXlsx(buffered)

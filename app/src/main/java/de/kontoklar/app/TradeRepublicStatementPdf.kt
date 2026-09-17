@@ -19,14 +19,93 @@ private val statementDate = Regex("^\\s*(\\d{4}-\\d{2}-\\d{2}|\\d{1,2}[./]\\d{1,
 private val statementAmount = Regex("(?<![\\w/])(?:EUR\\s*)?(?:€\\s*)?[+−-]?(?:\\d{1,3}(?:[ ,.'’]\\d{3})+|\\d+)(?:[,.]\\d{2})(?!\\d)", RegexOption.IGNORE_CASE)
 private val germanStatementDate = DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("d. MMMM uuuu").toFormatter(Locale.GERMAN)
 private val englishStatementDate = DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("d MMM uuuu").toFormatter(Locale.ENGLISH)
+private val c24TransactionStart = Regex("^\\s*(\\d{1,2})\\.(\\d{1,2})\\.\\s+\\d{1,2}\\.\\d{1,2}\\.\\s+(.+?)\\s+([+−-]?)\\s*((?:\\d{1,3}(?:[ .']\\d{3})+|\\d+)[,.]\\d{2})\\s*€?\\s*$")
+private val c24StatementYear = Regex("(?i)(?:Kontoauszug|vorläufiger Kontoauszug)\\s+\\d{1,2}/(\\d{4})")
 
-fun parseTradeRepublicStatementPdf(input: InputStream, context: Context): ParsedBankStatement {
+fun parseBankStatementPdf(input: InputStream, context: Context): ParsedBankStatement {
     initializePdfBoxIfNeeded(context)
     val text = PDDocument.load(
         LimitedTradeRepublicInputStream(input, MAX_TRADE_REPUBLIC_PDF_BYTES),
         MemoryUsageSetting.setupTempFileOnly()
     ).use { document -> PDFTextStripper().getText(document) }
-    return parseTradeRepublicStatementText(text)
+    val normalized = text.lowercase(Locale.ROOT)
+    return when {
+        normalized.contains("trade republic") -> parseTradeRepublicStatementText(text)
+        normalized.contains("c24 bank") && normalized.contains("transaktionsübersicht") -> parseC24StatementText(text)
+        else -> error("Das PDF ist kein unterstützter C24- oder Trade-Republic-Kontoauszug.")
+    }
+}
+
+fun parseTradeRepublicStatementPdf(input: InputStream, context: Context): ParsedBankStatement {
+    return parseBankStatementPdf(input, context).also { statement ->
+        require(statement.transactions.isNotEmpty()) { "Der Trade-Republic-Kontoauszug ist leer." }
+    }
+}
+
+/** Parses C24's digital statement layout locally. Rows may span several lines and are
+ * terminated by the next dated row; summary balances are deliberately ignored. */
+internal fun parseC24StatementText(text: String): ParsedBankStatement {
+    require(text.length <= MAX_TRADE_REPUBLIC_PDF_BYTES) { "Der extrahierte C24-Kontoauszug ist zu groß." }
+    val normalized = text.lowercase(Locale.ROOT)
+    require(normalized.contains("c24 bank") && normalized.contains("transaktionsübersicht")) {
+        "Das PDF ist kein erkennbarer C24-Kontoauszug."
+    }
+    val accountIban = Regex("(?i)\\bIBAN:\\s*([A-Z]{2}\\d{2}(?:\\s?[A-Z0-9]){11,30})\\b")
+        .find(text)?.groupValues?.get(1)?.replace(" ", "").orEmpty()
+    var year = c24StatementYear.find(text)?.groupValues?.get(1)?.toIntOrNull()
+    data class Pending(val date: String, val amount: Long, val type: String, val details: MutableList<String>)
+    val pending = mutableListOf<Pending>()
+    var current: Pending? = null
+    fun flush() {
+        current?.let(pending::add)
+        current = null
+    }
+    text.lineSequence().forEach { rawLine ->
+        val line = rawLine.trim()
+        c24StatementYear.find(line)?.groupValues?.get(1)?.toIntOrNull()?.let { year = it }
+        val match = c24TransactionStart.matchEntire(line)
+        if (match != null) {
+            flush()
+            val transactionYear = year ?: error("C24-Buchung enthält kein eindeutig ermittelbares Jahr.")
+            val date = runCatching { LocalDate.of(transactionYear, match.groupValues[2].toInt(), match.groupValues[1].toInt()).toString() }
+                .getOrElse { error("Ungültiges C24-Buchungsdatum.") }
+            val amount = parseStatementMoney(match.groupValues[5])
+            val signed = when (match.groupValues[4]) {
+                "+" -> kotlin.math.abs(amount)
+                "-", "−" -> -kotlin.math.abs(amount)
+                else -> error("C24-Buchung ohne eindeutige Soll-/Haben-Kennzeichnung.")
+            }
+            // The text before the sign is the transaction type; keep it as the first detail.
+            current = Pending(date, signed, match.groupValues[3], mutableListOf(match.groupValues[3]))
+            return@forEach
+        }
+        if (current != null && line.isNotBlank() &&
+            !line.startsWith("Zusammenfassung", ignoreCase = true) &&
+            !line.startsWith("Startsaldo", ignoreCase = true) &&
+            !line.startsWith("Kontobelastungen", ignoreCase = true) &&
+            !line.startsWith("Kontogutschriften", ignoreCase = true) &&
+            !line.startsWith("Endsaldo", ignoreCase = true) &&
+            !line.startsWith("C24 Bank", ignoreCase = true) &&
+            !line.contains("Seite ", ignoreCase = true) &&
+            !line.startsWith("IBAN:", ignoreCase = true) &&
+            !line.startsWith("BIC:", ignoreCase = true)
+        ) current!!.details += line
+    }
+    flush()
+    require(pending.isNotEmpty()) { "Im C24-Kontoauszug wurden keine sicher lesbaren Buchungen gefunden." }
+    val duplicateOrdinals = mutableMapOf<String, Int>()
+    val rows = pending.map { row ->
+        val description = row.details.filter(String::isNotBlank).distinct().joinToString(" · ").take(800)
+        require(description.isNotBlank()) { "Eine C24-Buchung enthält keinen Buchungstext." }
+        val counterparty = row.details.drop(1).firstOrNull().orEmpty().ifBlank { row.details.first() }.take(120)
+        val stableKey = listOf(accountIban, row.date, row.amount.toString(), description).joinToString("\u001f")
+        val ordinal = duplicateOrdinals.getOrDefault(stableKey, 0)
+        duplicateOrdinals[stableKey] = ordinal + 1
+        val id = MessageDigest.getInstance("SHA-256").digest("$stableKey\u001f$ordinal".toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(byte) }
+        BankTransaction(id, accountIban, row.date, counterparty, description, row.amount, "")
+    }
+    return ParsedBankStatement(listOf(accountIban).filter(String::isNotBlank), rows)
 }
 
 /** Parses only recognized Trade Republic account-statement table layouts; no values are guessed from unknown PDFs. */

@@ -26,4 +26,11 @@ class UpdaterTest {
         assertFalse(isNewerVersion("0.19.0", "0.19.0"))
         assertFalse(isNewerVersion("0.18.9", "0.19.0"))
     }
+
+    @Test fun updateRedirectsAreRestrictedToGithubHosts() {
+        assertTrue(isAllowedUpdateHost("github.com"))
+        assertTrue(isAllowedUpdateHost("release-assets.githubusercontent.com"))
+        assertFalse(isAllowedUpdateHost("example.com"))
+        assertFalse(isAllowedUpdateHost("api.github.com"))
+    }
 }

@@ -50,11 +50,10 @@ suspend fun downloadVerifiedApk(cacheDir: File, release: AppRelease): File = wit
     val updatesDir = File(cacheDir, "updates").apply { check(isDirectory || mkdirs()) { "Update-Speicher ist nicht verfügbar." } }
     val partial = File(updatesDir, "kontoklar-${release.version}.apk.part")
     val verified = File(updatesDir, "kontoklar-${release.version}.apk")
-    val connection = URL(release.apkUrl).openConnection() as HttpURLConnection
+    val connection = openVerifiedUpdateConnection(release.apkUrl)
     try {
         connection.connectTimeout = 15_000
         connection.readTimeout = 30_000
-        connection.instanceFollowRedirects = true
         connection.setRequestProperty("User-Agent", "KontoKlar-Android-Updater")
         require(connection.responseCode in 200..299) { "Download nicht verfügbar." }
         val digest = MessageDigest.getInstance("SHA-256")
@@ -85,6 +84,42 @@ suspend fun downloadVerifiedApk(cacheDir: File, release: AppRelease): File = wit
     } finally {
         connection.disconnect()
     }
+}
+
+private val ALLOWED_UPDATE_HOSTS = setOf(
+    "github.com",
+    "release-assets.githubusercontent.com",
+    "objects.githubusercontent.com",
+    "github-releases.githubusercontent.com"
+)
+
+internal fun isAllowedUpdateHost(host: String): Boolean = host.lowercase() in ALLOWED_UPDATE_HOSTS
+
+/** Follows only HTTPS redirects that stay within GitHub's download hosts. */
+private fun openVerifiedUpdateConnection(initialUrl: String): HttpURLConnection {
+    var currentUrl = URL(initialUrl)
+    repeat(4) { attempt ->
+        require(currentUrl.protocol == "https" && isAllowedUpdateHost(currentUrl.host)) {
+            "Die APK-Weiterleitung führt zu einem nicht erlaubten Ziel."
+        }
+        val connection = (currentUrl.openConnection() as HttpURLConnection).apply {
+            instanceFollowRedirects = false
+            connectTimeout = 15_000
+            readTimeout = 30_000
+        }
+        val status = connection.responseCode
+        if (status in 200..299) return connection
+        if (status in 300..399 && attempt < 3) {
+            val location = connection.getHeaderField("Location")
+            connection.disconnect()
+            require(!location.isNullOrBlank()) { "Die APK-Weiterleitung enthält kein Ziel." }
+            currentUrl = URL(currentUrl, location)
+        } else {
+            connection.disconnect()
+            error("Download nicht verfügbar.")
+        }
+    }
+    error("Zu viele APK-Weiterleitungen.")
 }
 
 fun isNewerVersion(remote: String, local: String): Boolean {

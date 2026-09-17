@@ -478,6 +478,11 @@ private fun KontoKlarApp() {
                         }
                     },
                     onImportStatement = { bankStatementImportLauncher.launch(arrayOf("application/pdf", "application/xml", "text/xml", "application/camt.053+xml", "text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "*/*")) },
+                    onOpenComdirectApi = {
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.comdirect.de/cms/kontakt-zugaenge-api.html")))
+                        }.onFailure { toast = "Die comdirect-API-Seite konnte nicht geöffnet werden." }
+                    },
                     onMatchInvoice = { transaction, invoice ->
                         if (transaction.amountCents > 0 && transaction.amountCents <= invoiceOutstandingCents(invoice) && invoice.status != "Entwurf") {
                             runCatching { store.recordInvoicePayment(invoice.id, transaction.amountCents, LocalDate.parse(transaction.date), "Kontoauszug", transaction.id) }

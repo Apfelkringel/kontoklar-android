@@ -60,6 +60,7 @@ fun BankingScreen(
     onDeleteConnection: (LiveBankConnection) -> Unit,
     onDeleteBankProfile: () -> Unit,
     onImportStatement: () -> Unit,
+    onOpenComdirectApi: () -> Unit,
     onMatchInvoice: (BankTransaction, Invoice) -> Unit,
     onMatchExpense: (BankTransaction, Expense) -> Unit,
     onClassifyTransaction: (BankTransaction, String) -> Unit
@@ -162,6 +163,10 @@ fun BankingScreen(
                     if (!bankingConfigured) {
                         Text("Eigene kostenlose Lösung aktiv: KontoKlar verarbeitet deine Auszüge direkt auf dem Gerät – ohne finAPI, Abo oder Bankzugang.", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         Text("Unterstützt werden CAMT.053, MT940/Swift, C24-/comdirect-CSV, C24-Excel (.xlsx) und Trade-Republic-Kontoauszüge als PDF. Alles wird lokal auf dem Gerät verarbeitet.", color = Muted, fontSize = 11.sp)
+                        OutlinedButton(onClick = onOpenComdirectApi, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                            Text("comdirect-API für eigenes Konto einrichten")
+                        }
+                        Text("Die offizielle Registrierung öffnet sich im Browser. Client-Secret, PIN und TAN bleiben bei dir und werden nicht in KontoKlar eingegeben.", color = Muted, fontSize = 10.sp)
                     } else {
                         Text("Freigabe und Datenabruf laufen über finAPI. PIN und TAN gibst du ausschließlich im Bank-/finAPI-Dialog ein. Umsätze werden vom Anbieter abgerufen und danach in KontoKlar lokal gespeichert.", color = Muted, fontSize = 11.sp)
                         Button(

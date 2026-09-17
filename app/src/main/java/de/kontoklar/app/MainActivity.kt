@@ -1325,10 +1325,22 @@ private fun AppUpdateCard() {
     val context = LocalContext.current
     var release by remember { mutableStateOf<AppRelease?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    var checking by remember { mutableStateOf(true) }
+    var checking by remember { mutableStateOf(false) }
     var downloading by remember { mutableStateOf(false) }
     var installerOpened by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val checkForUpdates: () -> Unit = {
+        if (!checking && !downloading) {
+            checking = true
+            error = null
+            scope.launch {
+                runCatching { fetchLatestRelease() }
+                    .onSuccess { release = it }
+                    .onFailure { error = it.message ?: "Release konnte nicht geladen werden." }
+                checking = false
+            }
+        }
+    }
     val startDownload: (AppRelease) -> Unit = { latest ->
         if (!downloading) {
             downloading = true
@@ -1361,10 +1373,7 @@ private fun AppUpdateCard() {
         }
     }
     LaunchedEffect(Unit) {
-        runCatching { fetchLatestRelease() }
-            .onSuccess { release = it }
-            .onFailure { error = it.message ?: "Release konnte nicht geladen werden." }
-        checking = false
+        checkForUpdates()
     }
     Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1376,6 +1385,7 @@ private fun AppUpdateCard() {
                     Text("Installiert: ${BuildConfig.VERSION_NAME}", color = Muted, fontSize = 12.sp)
                 }
                 if (checking) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
+                else TextButton(onClick = checkForUpdates, enabled = !downloading) { Text("Prüfen") }
             }
             when {
                 checking -> Text("Suche nach einer neuen Version …", color = Muted, fontSize = 12.sp)

@@ -199,12 +199,7 @@ private fun xlsxColumnIndex(reference: String): Int {
 fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
     val bytes = input.readNBytes((MAX_BANK_CSV_BYTES + 1).toInt())
     require(bytes.size <= MAX_BANK_CSV_BYTES) { "Die CSV-Datei ist größer als 20 MB." }
-    val content = when {
-        bytes.size >= 3 && bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte() -> String(bytes, 3, bytes.size - 3, Charsets.UTF_8)
-        bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() -> String(bytes, 2, bytes.size - 2, Charsets.UTF_16LE)
-        bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte() -> String(bytes, 2, bytes.size - 2, Charsets.UTF_16BE)
-        else -> String(bytes, Charsets.UTF_8)
-    }
+    val content = decodeBankCsv(bytes)
     val delimiter = listOf(';', ',', '\t').maxBy { candidate -> content.lineSequence().firstOrNull().orEmpty().count { it == candidate } }
     val rows = parseCsvRows(content, delimiter)
     val headerIndex = rows.indexOfFirst { row ->
@@ -269,6 +264,22 @@ fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
     require(parsed.size <= MAX_BANK_CSV_ROWS) { "Die CSV-Datei enthält mehr als $MAX_BANK_CSV_ROWS Buchungen." }
     return ParsedBankStatement(parsed.map(BankTransaction::accountIban).filter(String::isNotBlank).distinct(), parsed)
 }
+
+private fun decodeBankCsv(bytes: ByteArray): String {
+    val decoded = when {
+        bytes.size >= 3 && bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte() -> String(bytes, 3, bytes.size - 3, Charsets.UTF_8)
+        bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() -> String(bytes, 2, bytes.size - 2, Charsets.UTF_16LE)
+        bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte() -> String(bytes, 2, bytes.size - 2, Charsets.UTF_16BE)
+        else -> String(bytes, Charsets.UTF_8)
+    }
+    // Older comdirect exports are ISO-8859-15 without a BOM. A replacement
+    // character is a reliable signal that UTF-8 decoding was not applicable.
+    return if (decoded.contains('\uFFFD')) {
+        String(bytes, charset("ISO-8859-15"))
+    } else decoded
+}
+
+private fun charset(name: String): java.nio.charset.Charset = java.nio.charset.Charset.forName(name)
 
 private fun parseCsvRows(content: String, delimiter: Char): List<List<String>> {
     val rows = mutableListOf<List<String>>()

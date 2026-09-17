@@ -39,6 +39,17 @@ class BankStatementCsvTest {
         assertTrue(parsed.transactions.single().description.contains("Empfänger: Stadtwerke"))
     }
 
+    @Test fun importsLegacyIso885915ComdirectCsv() {
+        val csv = "Buchungstag;Vorgang;Betrag;Zahlungsempfänger;Verwendungszweck\n" +
+            "16.09.2026;Kartenzahlung;-12,50;Müller €;Café\n"
+
+        val parsed = parseBankStatementCsv(ByteArrayInputStream(csv.toByteArray(java.nio.charset.Charset.forName("ISO-8859-15"))))
+
+        assertEquals(1, parsed.transactions.size)
+        assertEquals("Müller €", parsed.transactions.single().counterparty)
+        assertTrue(parsed.transactions.single().description.contains("Café"))
+    }
+
     @Test fun importsPytrTradeRepublicExportLocally() {
         val csv = "Date;Type;Value;Name;ISIN;Shares;Taxes;Fees\n" +
             "2026-09-16;Deposit;1000.00;Eigene Einzahlung;;;;\n" +

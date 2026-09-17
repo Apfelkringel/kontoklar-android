@@ -162,7 +162,7 @@ fun BankingScreen(
                     }
                     if (!bankingConfigured) {
                         Text("Eigene kostenlose Lösung aktiv: KontoKlar verarbeitet deine Auszüge direkt auf dem Gerät – ohne finAPI, Abo oder Bankzugang.", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Unterstützt werden CAMT.053, MT940/Swift, C24-/comdirect-CSV, C24-Excel (.xlsx) und Trade-Republic-Kontoauszüge als PDF. Alles wird lokal auf dem Gerät verarbeitet.", color = Muted, fontSize = 11.sp)
+                            Text("Unterstützt werden CAMT.053, MT940/Swift, C24-/comdirect-CSV, C24-Excel (.xlsx), Trade-Republic-PDFs und pytr-CSV-Exporte. Alles wird lokal auf dem Gerät verarbeitet.", color = Muted, fontSize = 11.sp)
                         OutlinedButton(onClick = onOpenComdirectApi, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
                             Text("comdirect-API für eigenes Konto einrichten")
                         }
@@ -229,7 +229,7 @@ fun BankingScreen(
                     Icon(Icons.Default.SyncAlt, null, tint = Forest)
                     Spacer(Modifier.height(8.dp))
                     Text("Umsätze sicher abgleichen", color = Ink, fontWeight = FontWeight.SemiBold)
-                    Text("Importiere CAMT.053, C24-/comdirect-CSV, C24-Excel (.xlsx) oder einen Trade-Republic-Kontoauszug als PDF. Dateien werden auf dem Gerät verarbeitet.", color = Muted, fontSize = 12.sp)
+                    Text("Importiere CAMT.053, C24-/comdirect-CSV, C24-Excel (.xlsx), pytr-CSV oder einen Trade-Republic-Kontoauszug als PDF. Dateien werden auf dem Gerät verarbeitet.", color = Muted, fontSize = 12.sp)
                 }
             }
         }

@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.time.LocalDate
@@ -259,12 +261,44 @@ private fun KontoKlarApp() {
         }
     }
 
+    suspend fun refreshBankConnectionsUntilReady() {
+        val maxAttempts = 12
+        val retryDelayMillis = 5_000L
+        var attempts = 0
+        var lastError: String? = null
+        while (awaitingInitialBankSnapshot && attempts < maxAttempts) {
+            try {
+                refreshBankConnections()
+                lastError = null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                lastError = error.message ?: "Die Bankverbindung konnte noch nicht gelesen werden."
+            }
+            if (!awaitingInitialBankSnapshot) return
+            attempts++
+            bankingMessage = "Die Bankfreigabe wird verarbeitet – automatische Prüfung $attempts/$maxAttempts."
+            if (attempts < maxAttempts) delay(retryDelayMillis)
+        }
+        if (awaitingInitialBankSnapshot) {
+            bankingMessage = lastError?.let { "$it Bitte tippe auf Aktualisieren, sobald die Freigabe abgeschlossen ist." }
+                ?: "Die Bankfreigabe dauert länger. Tippe auf Aktualisieren, um es erneut zu versuchen."
+        }
+    }
+
     LaunchedEffect(page, liveBanking.isConfigured, resumeVersion) {
         if (page == Page.Banking && liveBanking.isConfigured) {
             bankingBusy = true
-            runCatching { refreshBankConnections() }
-                .onFailure { bankingMessage = it.message ?: "Banken konnten nicht geladen werden." }
-            bankingBusy = false
+            try {
+                if (awaitingInitialBankSnapshot) refreshBankConnectionsUntilReady()
+                else refreshBankConnections()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                bankingMessage = error.message ?: "Banken konnten nicht geladen werden."
+            } finally {
+                bankingBusy = false
+            }
         }
     }
     val snackbar = remember { SnackbarHostState() }
@@ -360,10 +394,19 @@ private fun KontoKlarApp() {
                     onRefreshConnections = {
                         scope.launch {
                             bankingBusy = true
-                            runCatching { refreshBankConnections() }
-                                .onSuccess { if (!awaitingInitialBankSnapshot) bankingMessage = "Bankverbindungen aktualisiert." }
-                                .onFailure { bankingMessage = it.message ?: "Verbindungen konnten nicht aktualisiert werden." }
-                            bankingBusy = false
+                            try {
+                                if (awaitingInitialBankSnapshot) refreshBankConnectionsUntilReady()
+                                else {
+                                    refreshBankConnections()
+                                    bankingMessage = "Bankverbindungen aktualisiert."
+                                }
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (error: Exception) {
+                                bankingMessage = error.message ?: "Verbindungen konnten nicht aktualisiert werden."
+                            } finally {
+                                bankingBusy = false
+                            }
                         }
                     },
                     onSyncConnection = { connection ->

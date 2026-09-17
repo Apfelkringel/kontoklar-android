@@ -54,7 +54,7 @@ fun BankingScreen(
     connections: List<LiveBankConnection>,
     bankingBusy: Boolean,
     bankingMessage: String?,
-    onConnectBank: (BankingInstitution?, Boolean) -> Unit,
+    onConnectBank: (BankingInstitution?, List<String>) -> Unit,
     onRefreshConnections: () -> Unit,
     onSyncConnection: (LiveBankConnection) -> Unit,
     onDeleteConnection: (LiveBankConnection) -> Unit,
@@ -67,7 +67,8 @@ fun BankingScreen(
     val credits = transactions.filter { it.amountCents > 0 }
     val debits = transactions.filter { it.amountCents < 0 }
     var confirmDeleteBankProfile by remember { mutableStateOf(false) }
-    var includeSecurities by remember { mutableStateOf(true) }
+    var selectedAdditionalAccountTypes by remember { mutableStateOf(setOf("SECURITY")) }
+    val requestedAccountTypes = listOf("CHECKING") + listOf("SAVINGS", "CREDIT_CARD", "SECURITY").filter { it in selectedAdditionalAccountTypes }
     if (confirmDeleteBankProfile) {
         AlertDialog(
             onDismissRequest = { confirmDeleteBankProfile = false },
@@ -136,12 +137,26 @@ fun BankingScreen(
                         if (bankingConfigured) TextButton(onClick = onRefreshConnections, enabled = !bankingBusy) { Text("Aktualisieren") }
                     }
                     if (bankingConfigured) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text("Wertpapierdepots mit abrufen", color = Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                Text("Kann eine zusätzliche Freigabe bei der Bank erfordern.", color = Muted, fontSize = 11.sp)
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("Kontotypen", color = Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Girokonto ist immer dabei. Weitere Typen können zusätzliche Freigaben erfordern.", color = Muted, fontSize = 11.sp)
+                            listOf(
+                                "SAVINGS" to "Spar- und Tagesgeldkonten",
+                                "CREDIT_CARD" to "Kreditkarten",
+                                "SECURITY" to "Wertpapierdepots"
+                            ).forEach { (accountType, label) ->
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(label, color = Ink, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                    Switch(
+                                        checked = accountType in selectedAdditionalAccountTypes,
+                                        onCheckedChange = { checked ->
+                                            selectedAdditionalAccountTypes = if (checked) selectedAdditionalAccountTypes + accountType
+                                            else selectedAdditionalAccountTypes - accountType
+                                        },
+                                        enabled = !bankingBusy
+                                    )
+                                }
                             }
-                            Switch(checked = includeSecurities, onCheckedChange = { includeSecurities = it }, enabled = !bankingBusy)
                         }
                     }
                     if (!bankingConfigured) {
@@ -149,7 +164,7 @@ fun BankingScreen(
                     } else {
                         Text("Freigabe und Datenabruf laufen über finAPI. PIN und TAN gibst du ausschließlich im Bank-/finAPI-Dialog ein. Umsätze werden vom Anbieter abgerufen und danach in KontoKlar lokal gespeichert.", color = Muted, fontSize = 11.sp)
                         Button(
-                            onClick = { onConnectBank(null, includeSecurities) }, enabled = !bankingBusy,
+                            onClick = { onConnectBank(null, requestedAccountTypes) }, enabled = !bankingBusy,
                             modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Forest)
                         ) { Text("Bank suchen und verbinden") }
@@ -162,7 +177,7 @@ fun BankingScreen(
                         }
                         institutions.forEach { institution ->
                             OutlinedButton(
-                                onClick = { onConnectBank(institution, includeSecurities) }, enabled = !bankingBusy,
+                                onClick = { onConnectBank(institution, requestedAccountTypes) }, enabled = !bankingBusy,
                                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
                             ) { Text("${institution.name} direkt verbinden") }
                         }

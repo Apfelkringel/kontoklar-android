@@ -44,9 +44,13 @@ class LiveBankingClient(context: Context, private val baseUrl: String = BuildCon
         }
     }
 
-    fun connect(bankId: String? = null, includeSecurities: Boolean = true): BankLinkSession {
-        val accountTypes = JSONArray().put("CHECKING").apply { if (includeSecurities) put("SECURITY") }
-        val payload = JSONObject().put("accountTypes", accountTypes).apply { bankId?.let { put("bankId", it) } }
+    fun connect(bankId: String? = null, accountTypes: List<String> = listOf("CHECKING", "SECURITY")): BankLinkSession {
+        require(accountTypes.isNotEmpty() && accountTypes.distinct().size == accountTypes.size && accountTypes.all { it in SUPPORTED_ACCOUNT_TYPES }) {
+            "Ungültige Kontotyp-Auswahl."
+        }
+        require("CHECKING" in accountTypes) { "Das Girokonto muss Teil der Auswahl sein." }
+        val accountTypeArray = JSONArray().also { array -> accountTypes.forEach(array::put) }
+        val payload = JSONObject().put("accountTypes", accountTypeArray).apply { bankId?.let { put("bankId", it) } }
         val result = request("POST", "/v1/connections", payload)
         val url = URL(result.getString("authorizationUrl"))
         require(url.protocol == "https" && url.host in setOf("webform-sandbox.finapi.io", "webform-live.finapi.io")) {
@@ -110,6 +114,7 @@ class LiveBankingClient(context: Context, private val baseUrl: String = BuildCon
 
     private companion object {
         const val TOKEN_KEY = "live_banking_installation_token_v1"
+        val SUPPORTED_ACCOUNT_TYPES = setOf("CHECKING", "SAVINGS", "CREDIT_CARD", "SECURITY")
         fun createInstallationToken(): String = ByteArray(32).also(SecureRandom()::nextBytes).let(Base64.getUrlEncoder().withoutPadding()::encodeToString)
         fun String.pathSegment(): String = java.net.URLEncoder.encode(this, Charsets.UTF_8.name()).replace("+", "%20")
     }

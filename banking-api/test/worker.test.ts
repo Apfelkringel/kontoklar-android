@@ -208,6 +208,33 @@ test("starts the provider-hosted bank search without preselecting a bank", async
   }
 });
 
+test("rejects unknown bank account types before creating a provider consent", async () => {
+  const env = baseEnv();
+  const originalFetch = globalThis.fetch;
+  let consentRequests = 0;
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname === "/api/v2/oauth/token") {
+      const grant = new URLSearchParams(String(init?.body)).get("grant_type");
+      return Response.json({ access_token: grant === "client_credentials" ? "client-token" : "user-token" });
+    }
+    if (url.pathname === "/api/v2/users" && init?.method === "POST") return Response.json({ id: "user" }, { status: 201 });
+    if (url.pathname === "/api/webForms/bankConnectionImport") consentRequests++;
+    return Response.json({ error: "unexpected test route" }, { status: 500 });
+  };
+  try {
+    const response = await worker.fetch(new Request("https://api.test/v1/connections", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${"V".repeat(43)}`, "CF-Connecting-IP": "192.0.2.13", "Content-Type": "application/json" },
+      body: JSON.stringify({ accountTypes: ["CHECKING", "PASSWORDS"] }),
+    }), env as never, {} as never);
+    assert.equal(response.status, 400);
+    assert.equal(consentRequests, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("rejects excess new installations before persisting their D1 identity", async () => {
   const env = baseEnv();
   const originalFetch = globalThis.fetch;
@@ -306,7 +333,7 @@ test("creates a provider-hosted bank consent and normalizes linked EUR transacti
     if (url.pathname === "/api/webForms/bankConnectionImport") {
       const payload = JSON.parse(String(init?.body));
       assert.equal(payload.bank.id, 24001);
-      assert.deepEqual(payload.accountTypes, ["CHECKING", "SECURITY"]);
+      assert.deepEqual(payload.accountTypes, ["CHECKING", "SAVINGS", "CREDIT_CARD", "SECURITY"]);
       assert.equal(payload.skipBalancesDownload, false);
       assert.equal(payload.skipPositionsDownload, false);
       return Response.json({ id: "session-1", url: "https://webform-sandbox.finapi.io/wf/session-1" }, { status: 201 });
@@ -334,7 +361,8 @@ test("creates a provider-hosted bank consent and normalizes linked EUR transacti
   try {
     const headers = { Authorization: `Bearer ${"B".repeat(43)}`, "CF-Connecting-IP": "192.0.2.11" };
     const consent = await worker.fetch(new Request("https://api.test/v1/connections", {
-      method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ bankId: "24001" }),
+      method: "POST", headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ bankId: "24001", accountTypes: ["CHECKING", "SAVINGS", "CREDIT_CARD", "SECURITY"] }),
     }), env as never, {} as never);
     assert.equal(consent.status, 201);
     assert.deepEqual(await consent.json(), { id: "session-1", authorizationUrl: "https://webform-sandbox.finapi.io/wf/session-1" });

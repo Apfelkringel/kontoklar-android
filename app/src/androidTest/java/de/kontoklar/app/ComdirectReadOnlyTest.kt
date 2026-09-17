@@ -28,6 +28,7 @@ class ComdirectReadOnlyTest {
 
     @Test fun rejectsWriteLikeOrMalformedInputsByHavingNoWriteSurface() {
         assertTrue(ComdirectReadOnlyClient::class.java.methods.none { it.name in setOf("post", "put", "delete", "transfer", "order") })
+        assertTrue(runCatching { ComdirectReadOnlyClient("token", "") }.isFailure)
         assertTrue(runCatching { parseComdirectTransaction(JSONObject("""{"transactionId":"x","bookingDate":"2026-09-16","amount":{"value":"1.00"}}"""), "DE123") }.isFailure)
     }
 }

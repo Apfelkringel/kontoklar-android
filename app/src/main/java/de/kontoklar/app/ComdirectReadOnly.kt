@@ -16,10 +16,12 @@ import java.time.LocalDate
  */
 class ComdirectReadOnlyClient(
     private val accessToken: String,
+    private val sessionIdentifier: String,
     private val apiBaseUrl: String = "https://api.comdirect.de"
 ) {
     init {
         require(accessToken.isNotBlank()) { "Für den comdirect-Abruf fehlt ein Zugriffstoken." }
+        require(sessionIdentifier.isNotBlank()) { "Für den comdirect-Abruf fehlt eine aktive Session." }
         val base = URL(apiBaseUrl)
         require(base.protocol == "https" && base.host == "api.comdirect.de" && base.userInfo == null && base.query == null && base.ref == null) {
             "Der comdirect-Client akzeptiert ausschließlich https://api.comdirect.de."
@@ -55,6 +57,10 @@ class ComdirectReadOnlyClient(
             readTimeout = 30_000
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Authorization", "Bearer $accessToken")
+            setRequestProperty(
+                "x-http-request-info",
+                JSONObject().put("clientRequestId", JSONObject().put("sessionId", sessionIdentifier).put("requestId", requestId())).toString()
+            )
         }
         return try {
             val status = connection.responseCode
@@ -72,6 +78,7 @@ class ComdirectReadOnlyClient(
 
     private companion object {
         fun String.pathSegment() = java.net.URLEncoder.encode(this, Charsets.UTF_8.name()).replace("+", "%20")
+        fun requestId(): String = java.util.UUID.randomUUID().toString().replace("-", "")
     }
 }
 

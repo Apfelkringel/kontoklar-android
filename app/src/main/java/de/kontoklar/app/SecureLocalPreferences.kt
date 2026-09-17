@@ -40,6 +40,8 @@ internal class SecureLocalPreferences(context: Context) {
         return editor.commit()
     }
 
+    fun clear(): Boolean = preferences.edit().clear().commit()
+
     private fun migratePlaintext() {
         val oldValues = preferences.all.mapNotNull { (key, value) ->
             (value as? String)?.takeUnless { it.startsWith(ENCRYPTED_PREFIX) }?.let { key to it }

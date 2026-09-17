@@ -145,6 +145,11 @@ internal fun cleanupReceiptWorkingCopies(context: Context) {
     }
 }
 
+internal fun deleteAllLocalReceiptFiles(context: Context) {
+    listOf(File(context.filesDir, "receipts"), File(context.cacheDir, "receipt-capture"), File(context.cacheDir, "receipt-previews"))
+        .forEach { directory -> directory.listFiles()?.forEach(File::delete) }
+}
+
 private fun receiptFile(context: Context, uri: Uri): File {
     val directory = File(context.filesDir, "receipts").canonicalFile
     val file = File(directory, uri.lastPathSegment.orEmpty()).canonicalFile

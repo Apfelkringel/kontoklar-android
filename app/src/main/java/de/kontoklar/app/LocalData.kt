@@ -174,6 +174,8 @@ fun List<Product>.withoutProduct(id: String): List<Product> = filterNot { it.id 
 class LocalData(context: Context) {
     private val prefs = SecureLocalPreferences(context)
 
+    fun clearAllLocalData(): Boolean = prefs.clear()
+
     fun exportSnapshot(): JSONObject = JSONObject()
         .put("schemaVersion", 1)
         .put("businessProfile", businessProfileJson(businessProfile()))

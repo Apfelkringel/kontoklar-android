@@ -144,6 +144,7 @@ private fun KontoKlarApp() {
     var editingProduct by remember { mutableStateOf(Product(name = "", unitPriceCents = 0)) }
     var productToDelete by remember { mutableStateOf<Product?>(null) }
     var documentsOpen by remember { mutableStateOf(false) }
+    var deleteDataConfirmationOpen by remember { mutableStateOf(false) }
     var supportOpen by remember { mutableStateOf(false) }
     var restoreBackupUri by remember { mutableStateOf<Uri?>(null) }
     var backupPasswordDialog by remember { mutableStateOf(false) }
@@ -705,7 +706,39 @@ private fun KontoKlarApp() {
         if (documentsOpen) DataManagementDialog(
             onDismiss = { documentsOpen = false },
             onExport = { documentsOpen = false; backupPasswordForRestore = false; backupPassword = ""; backupPasswordDialog = true },
-            onImport = { documentsOpen = false; backupImportLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream", "*/*")) }
+            onImport = { documentsOpen = false; backupImportLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream", "*/*")) },
+            onDelete = { deleteDataConfirmationOpen = true }
+        )
+        if (deleteDataConfirmationOpen) AlertDialog(
+            onDismissRequest = { deleteDataConfirmationOpen = false },
+            title = { Text("Alle lokalen Daten löschen?", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) },
+            text = { Text("Damit werden Rechnungen, Ausgaben, Kunden, Angebote, Bankimporte, Profilangaben, Belege und lokale Einstellungen von diesem Gerät gelöscht. Dieser Schritt kann nicht rückgängig gemacht werden. Erstelle vorher eine Sicherung, wenn du die Daten behalten möchtest.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleteDataConfirmationOpen = false
+                    documentsOpen = false
+                    InvoiceReminderScheduler.reconcile(context, emptyList())
+                    TaxDeadlineReminderScheduler.reconcile(context, emptyList())
+                    store.clearAllLocalData()
+                    deleteAllLocalReceiptFiles(context)
+                    invoices = emptyList()
+                    invoicePayments = emptyList()
+                    expenses = emptyList()
+                    expensePayments = emptyList()
+                    bankTransactions = emptyList()
+                    bankAccounts = emptyList()
+                    bankSecurities = emptyList()
+                    customers = emptyList()
+                    offers = emptyList()
+                    products = emptyList()
+                    taxDeadlines = emptyList()
+                    recurringPlans = emptyList()
+                    recurringExpensePlans = emptyList()
+                    profile = BusinessProfile()
+                    toast = "Alle lokalen Daten wurden gelöscht"
+                }) { Text("Endgültig löschen", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { deleteDataConfirmationOpen = false }) { Text("Abbrechen") } }
         )
         restoreBackupUri?.let { source ->
             AlertDialog(
@@ -1377,7 +1410,7 @@ private fun MoreScreen(profile: BusinessProfile, onAction: (String) -> Unit) {
 }
 
 @Composable
-private fun DataManagementDialog(onDismiss: () -> Unit, onExport: () -> Unit, onImport: () -> Unit) {
+private fun DataManagementDialog(onDismiss: () -> Unit, onExport: () -> Unit, onImport: () -> Unit, onDelete: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Dokumente & Datensicherung", color = Ink, fontWeight = FontWeight.Bold) },
@@ -1389,6 +1422,9 @@ private fun DataManagementDialog(onDismiss: () -> Unit, onExport: () -> Unit, on
                 }
                 OutlinedButton(onClick = onImport, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Restore, null); Spacer(Modifier.width(8.dp)); Text("Sicherung wiederherstellen")
+                }
+                OutlinedButton(onClick = onDelete, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                    Icon(Icons.Default.DeleteForever, null); Spacer(Modifier.width(8.dp)); Text("Alle lokalen Daten löschen")
                 }
                 Text("Eine Wiederherstellung ersetzt den aktuellen lokalen Datenbestand erst nach deiner Bestätigung.", color = Muted, fontSize = 11.sp)
             }

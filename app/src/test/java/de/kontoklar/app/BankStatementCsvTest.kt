@@ -39,6 +39,20 @@ class BankStatementCsvTest {
         assertTrue(parsed.transactions.single().description.contains("Empfänger: Stadtwerke"))
     }
 
+    @Test fun importsPytrTradeRepublicExportLocally() {
+        val csv = "Date;Type;Value;Name;ISIN;Shares;Taxes;Fees\n" +
+            "2026-09-16;Deposit;1000.00;Eigene Einzahlung;;;;\n" +
+            "2026-09-17;Dividend;12,34;ETF Ausschüttung;IE00B4L5Y983;0.42;1,23;0,00\n"
+
+        val parsed = parseBankStatementCsv(ByteArrayInputStream(csv.toByteArray(Charsets.UTF_8)))
+
+        assertEquals(2, parsed.transactions.size)
+        assertEquals(100_000L, parsed.transactions[0].amountCents)
+        assertEquals("Eigene Einzahlung", parsed.transactions[0].counterparty)
+        assertTrue(parsed.transactions[1].description.contains("Dividend"))
+        assertEquals(1_234L, parsed.transactions[1].amountCents)
+    }
+
     @Test fun rejectsUnknownExportsAndRowsWithInvalidAmounts() {
         val unknown = "name;sum\nA;12,00"
         assertTrue(runCatching { parseBankStatementCsv(ByteArrayInputStream(unknown.toByteArray())) }.isFailure)

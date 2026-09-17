@@ -191,7 +191,11 @@ private fun xlsxColumnIndex(reference: String): Int {
     return if (found && value <= MAX_BANK_XLSX_COLUMNS) value - 1 else -1
 }
 
-/** Imports the documented C24 and comdirect transaction CSV exports without sending them off-device. */
+/** Imports supported bank exports without sending them off-device.
+ *
+ * This also accepts the documented pytr transaction export used by the
+ * community for Trade Republic: Date;Type;Value;Name/Note;ISIN;Shares;Taxes;Fees.
+ */
 fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
     val bytes = input.readNBytes((MAX_BANK_CSV_BYTES + 1).toInt())
     require(bytes.size <= MAX_BANK_CSV_BYTES) { "Die CSV-Datei ist größer als 20 MB." }
@@ -206,17 +210,22 @@ fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
     val headerIndex = rows.indexOfFirst { row ->
         val headers = row.map(::normalizeBankCsvHeader)
         headers.any { it in setOf("buchungstag", "buchungsdatum", "bookingdate", "date", "datum") } &&
-            headers.any { it.contains("umsatzineur") || it == "betrag" || it == "amount" || it.contains("zahlungseingang") }
+            headers.any {
+                it.contains("umsatzineur") || it == "betrag" || it == "amount" || it == "value" ||
+                    it.contains("zahlungseingang")
+            }
     }
     require(headerIndex >= 0) { "Die CSV-Datei sieht nicht wie ein unterstützter C24- oder comdirect-Umsatzexport aus." }
     val headers = rows[headerIndex].map(::normalizeBankCsvHeader)
     fun column(vararg names: String): Int = headers.indexOfFirst { it in names }
     val dateColumn = column("buchungstag", "buchungsdatum", "bookingdate", "date", "datum")
-    val amountColumn = column("umsatzineur", "betrag", "amount")
+    val amountColumn = column("umsatzineur", "betrag", "amount", "value")
     val creditColumn = headers.indexOfFirst { it.contains("zahlungseingang") || it == "credit" }
     val debitColumn = headers.indexOfFirst { it.contains("zahlungsausgang") || it == "debit" }
     val typeColumn = headers.indexOfFirst { it in setOf("transaktionstyp", "vorgang", "umsatzart", "typ", "type") }
-    val counterpartyColumn = headers.indexOfFirst { it in setOf("zahlungsempfanger", "empfanger", "auftraggeber", "gegenkonto", "counterparty", "name") }
+    val counterpartyColumn = headers.indexOfFirst {
+        it in setOf("zahlungsempfanger", "empfanger", "auftraggeber", "gegenkonto", "counterparty", "name", "note")
+    }
     val purposeColumns = headers.mapIndexedNotNull { index, header ->
         index.takeIf { header in setOf("verwendungszweck", "buchungstext", "beschreibung", "purpose", "description", "remittance") }
     }

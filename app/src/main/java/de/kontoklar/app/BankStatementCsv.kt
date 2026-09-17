@@ -223,7 +223,7 @@ fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
     val taxColumn = headers.indexOfFirst { it in setOf("tax", "taxes", "steuer", "steuern") }
     val transactionIdColumn = headers.indexOfFirst { it in setOf("transactionid", "transaktionsid", "transactionid") }
     val officialTradeRepublicCsv = headers.contains("datetime") && headers.contains("assetclass") &&
-        headers.contains("transactionid") && headers.contains("currency")
+        headers.contains("currency")
     val creditColumn = headers.indexOfFirst { it.contains("zahlungseingang") || it == "credit" }
     val debitColumn = headers.indexOfFirst { it.contains("zahlungsausgang") || it == "debit" }
     val typeColumn = headers.indexOfFirst { it in setOf("transaktionstyp", "vorgang", "umsatzart", "typ", "type") }
@@ -241,6 +241,7 @@ fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
     val sharesColumn = headers.indexOfFirst { it == "shares" || it == "stuck" || it == "anteile" }
     val priceColumn = headers.indexOfFirst { it == "price" || it == "kurs" }
     val currencyColumn = headers.indexOfFirst { it == "currency" || it == "waehrung" }
+    val nativeTradeShape = officialTradeRepublicCsv && symbolColumn >= 0 && sharesColumn >= 0 && priceColumn >= 0
     require(dateColumn >= 0 && (amountColumn >= 0 || creditColumn >= 0 || debitColumn >= 0)) { "In der CSV fehlen Buchungsdatum oder Betrag." }
 
     val duplicateOrdinals = mutableMapOf<String, Int>()
@@ -260,22 +261,21 @@ fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
                 if (incoming > 0) incoming else -outgoing
             }
             else -> {
-                val amount = parseBankCsvMoneyCents(value(amountColumn))
+                val rawAmount = value(amountColumn)
+                val amount = if (nativeTradeShape && rawAmount.isBlank()) 0L else parseBankCsvMoneyCents(rawAmount)
                 if (!officialTradeRepublicCsv) amount
                 else amount + listOf(feeColumn, taxColumn)
                     .filter { it >= 0 }
                     .sumOf { index -> value(index).takeIf(String::isNotBlank)?.let(::parseBankCsvMoneyCents) ?: 0L }
             }
         }
-        if (signedAmount == 0L) return@mapNotNull null
-        require(signedAmount != 0L) { "Eine CSV-Buchung enthält keinen Betrag." }
         val type = value(typeColumn)
         val counterparty = value(counterpartyColumn).ifBlank { value(counterpartyNameColumn) }
         val purpose = (purposeColumns.map(::value) + listOf(value(detailColumn))).filter(String::isNotBlank).distinct()
         val description = (listOf(type) + purpose).filter(String::isNotBlank).distinct().joinToString(" · ").take(800)
         val iban = value(ibanColumn)
         val sourceId = value(transactionIdColumn)
-        if (officialTradeRepublicCsv && symbolColumn >= 0 && sharesColumn >= 0 && typeColumn >= 0) {
+        if (nativeTradeShape && typeColumn >= 0) {
             parseBankCsvQuantity(value(sharesColumn))?.takeIf { it > 0.0 }?.let { shares ->
                 nativeTradeRows += NativeTradeRow(
                     id = sourceId,
@@ -289,6 +289,7 @@ fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
                 )
             }
         }
+        if (signedAmount == 0L) return@mapNotNull null
         val stableFields = if (sourceId.isNotBlank()) listOf(sourceId) else listOf(iban, date, signedAmount.toString(), counterparty, description)
         val stableKey = stableFields.joinToString("\u001f")
         val ordinal = duplicateOrdinals.getOrDefault(stableKey, 0)
@@ -297,7 +298,7 @@ fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
             .joinToString("") { byte -> "%02x".format(byte) }
         BankTransaction(id, iban, date, counterparty.ifBlank { "Unbekannter Zahlungspartner" }, description, signedAmount, value(referenceColumn))
     }.toList()
-    require(parsed.isNotEmpty()) { "Die CSV-Datei enthält keine importierbaren Buchungen." }
+    require(parsed.isNotEmpty() || nativeTradeRows.isNotEmpty()) { "Die CSV-Datei enthält keine importierbaren Buchungen oder Depotdaten." }
     require(parsed.size <= MAX_BANK_CSV_ROWS) { "Die CSV-Datei enthält mehr als $MAX_BANK_CSV_ROWS Buchungen." }
     return ParsedBankStatement(parsed.map(BankTransaction::accountIban).filter(String::isNotBlank).distinct(), parsed, aggregateNativeTradeRepublicPositions(nativeTradeRows))
 }
@@ -411,7 +412,7 @@ private fun parseBankCsvDate(value: String): String? = runCatching { LocalDate.p
 
 private fun parseBankCsvMoneyCents(value: String): Long {
     val cleaned = value.trim().replace("€", "").replace("EUR", "", ignoreCase = true).replace("\u00a0", "").replace("\u202f", "").replace(" ", "")
-    require(cleaned.isNotBlank()) { "Eine CSV-Buchung enthält keinen Betrag." }
+    if (cleaned.isBlank()) return 0L
     val normalized = if (cleaned.contains(',')) cleaned.replace(".", "").replace(',', '.') else cleaned
     return BigDecimal(normalized).setScale(2, RoundingMode.UNNECESSARY).movePointRight(2).longValueExact()
 }

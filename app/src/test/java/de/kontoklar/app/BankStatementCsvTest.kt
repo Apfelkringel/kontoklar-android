@@ -111,6 +111,17 @@ class BankStatementCsvTest {
         assertEquals(parsed.transactions.single().id, duplicate.transactions.single().id)
     }
 
+    @Test fun keepsNativeTradeRepublicPositionRowsWhenCashAmountIsBlank() {
+        val csv = "datetime,date,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,transaction_id\n" +
+            "2026-09-17T10:00:00Z,2026-09-17,TRADING,BUY,STOCK,ETF,IE00B4L5Y983,2,100.00,,,EUR,tr-blank\n"
+
+        val parsed = parseBankStatementCsv(ByteArrayInputStream(csv.toByteArray(Charsets.UTF_8)))
+
+        assertTrue(parsed.transactions.isEmpty())
+        assertEquals(1, parsed.securities.size)
+        assertEquals(2.0, parsed.securities.single().quantityNominal!!, 0.000001)
+    }
+
     @Test fun rejectsUnknownExportsAndRowsWithInvalidAmounts() {
         val unknown = "name;sum\nA;12,00"
         assertTrue(runCatching { parseBankStatementCsv(ByteArrayInputStream(unknown.toByteArray())) }.isFailure)

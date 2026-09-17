@@ -128,10 +128,11 @@ internal fun parseComdirectPosition(json: JSONObject, depotId: String): BankSecu
     val id = json.optString("positionId").ifBlank { json.optString("isin") }
     require(id.isNotBlank()) { "comdirect-Depotposition ohne Kennung." }
     val quantity = json.optString("quantity").toDoubleOrNull()
+        ?: json.optJSONObject("quantity")?.let { it.optString("value").toDoubleOrNull() }
     val marketValue = json.optJSONObject("marketValue")
     return BankSecurityPosition(
         id = "comdirect:$id", accountId = "comdirect:$depotId", connectionId = "comdirect",
-        name = json.optString("securityName").ifBlank { "Wertpapier" }, isin = json.optString("isin"),
+        name = json.optString("securityName").ifBlank { json.optString("name") }.ifBlank { "Wertpapier" }, isin = json.optString("isin"),
         wkn = json.optString("wkn"), quantityNominal = quantity, quantityType = "Stück",
         quoteType = "", quoteMinor = null, quoteCurrency = "",
         marketValueMinor = marketValue?.let { parseMinor(it.optString("value")) },

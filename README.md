@@ -49,6 +49,7 @@ Native Android app prototype built with Kotlin and Jetpack Compose. The app uses
 - Show due recurring invoice and expense plans prominently on the dashboard with a direct link to their confirmation dialog.
 - Search saved invoices and expenses locally by customer/merchant, number, description, category, status, note, or date.
 - Search imported bank transactions locally by counterparty, purpose, reference, IBAN, label, or date without changing reconciliation data.
+- Filter imported bank transactions locally by all, income, expense, or unmatched before reconciliation.
 - Provide the Android-side live Open Banking flow for C24, comdirect, Trade Republic, and provider bank search: provider-hosted authorization redirect, user-selected checking/savings/credit-card/securities account types, explicit sync, local transaction import, and disconnect. The app stores only a random per-installation API bearer token in encrypted preferences; provider credentials stay server-side.
 - Generate a shareable invoice PDF populated from the saved sender profile, recipient snapshot, service/invoice/due dates, gross/net/VAT breakdown and IBAN when present. Drafts remain conspicuously marked as drafts; sent/paid invoices require a complete address, tax identifier, saved VAT rate and valid positions before a final PDF is generated.
 - Android's system installer confirms package updates; it requires the one-time "Install unknown apps" permission.

@@ -77,10 +77,11 @@ fun BankingScreen(
     var selectedBankMonth by remember { mutableStateOf(YearMonth.now()) }
     var selectedAdditionalAccountTypes by remember { mutableStateOf(setOf("SECURITY")) }
     var transactionQuery by rememberSaveable { mutableStateOf("") }
+    var transactionFilter by rememberSaveable { mutableStateOf("ALL") }
     val requestedAccountTypes = listOf("CHECKING") + listOf("SAVINGS", "CREDIT_CARD", "SECURITY").filter { it in selectedAdditionalAccountTypes }
     val normalizedTransactionQuery = transactionQuery.trim().lowercase()
     val visibleTransactions = transactions.filter { transaction ->
-        normalizedTransactionQuery.isBlank() || listOf(
+        val matchesQuery = normalizedTransactionQuery.isBlank() || listOf(
             transaction.counterparty,
             transaction.description,
             transaction.reference,
@@ -88,6 +89,13 @@ fun BankingScreen(
             transaction.date,
             transaction.userClassification
         ).any { it.lowercase().contains(normalizedTransactionQuery) }
+        val matchesFilter = when (transactionFilter) {
+            "INCOME" -> transaction.amountCents > 0
+            "EXPENSE" -> transaction.amountCents < 0
+            "UNMATCHED" -> transaction.matchedInvoiceId == null && transaction.matchedExpenseId == null
+            else -> true
+        }
+        matchesQuery && matchesFilter
     }.sortedByDescending(BankTransaction::date)
     if (confirmDeleteBankProfile) {
         AlertDialog(
@@ -303,6 +311,18 @@ fun BankingScreen(
                 label = { Text("Buchungen durchsuchen") },
                 placeholder = { Text("Zahlungspartner, Zweck, Referenz oder Label") }
             )
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("ALL" to "Alle", "INCOME" to "Eingänge", "EXPENSE" to "Ausgänge", "UNMATCHED" to "Offen").forEach { (filter, label) ->
+                    OutlinedButton(
+                        onClick = { transactionFilter = filter },
+                        modifier = Modifier.weight(1f).height(38.dp),
+                        contentPadding = PaddingValues(horizontal = 2.dp),
+                        colors = if (transactionFilter == filter) ButtonDefaults.outlinedButtonColors(contentColor = Forest) else ButtonDefaults.outlinedButtonColors()
+                    ) { Text(label, fontSize = 10.sp, maxLines = 1) }
+                }
+            }
         }
         if (transactions.isEmpty()) item {
             Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {

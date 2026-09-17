@@ -31,3 +31,7 @@ Die nicht geheime Repository-Variable `KONTOKLAR_BANKING_API_BASE_URL` wird in d
 5. GitHub Actions und die Asset-Prüfsumme kontrollieren. Erst danach erscheint das Update in der App.
 
 `assembleRelease` bricht absichtlich ab, wenn die Release-Secrets fehlen. Debug-Builds benötigen den Release-Schlüssel nicht.
+
+## Quellarchiv
+
+Das vollständige Quellarchiv für Drive muss neben `app/` auch `banking-api/` (Cloudflare-Worker, Migrationen und Tests) enthalten. Lokale Build-Ausgaben, `node_modules/`, `.dev.vars` und der private Ordner `signing/` gehören nicht in das Archiv.

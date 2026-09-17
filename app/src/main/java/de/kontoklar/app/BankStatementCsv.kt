@@ -21,10 +21,26 @@ private const val MAX_BANK_CSV_ROWS = 50_000
 private const val MAX_BANK_XLSX_CELLS = 250_000
 private const val MAX_BANK_XLSX_COLUMNS = 256
 
+/** API-26-compatible equivalent of InputStream.readNBytes(limit). */
+internal fun readUpTo(input: InputStream, limit: Int): ByteArray {
+    require(limit >= 0) { "Leselimit darf nicht negativ sein." }
+    val output = ByteArrayOutputStream(minOf(limit, 8192))
+    val buffer = ByteArray(8192)
+    var remaining = limit
+    while (remaining > 0) {
+        val count = input.read(buffer, 0, minOf(buffer.size, remaining))
+        if (count < 0) break
+        if (count == 0) continue
+        output.write(buffer, 0, count)
+        remaining -= count
+    }
+    return output.toByteArray()
+}
+
 fun parseBankStatement(input: InputStream, context: Context? = null): ParsedBankStatement {
     val buffered = if (input.markSupported()) input else BufferedInputStream(input)
     buffered.mark(512)
-    val head = buffered.readNBytes(512)
+    val head = readUpTo(buffered, 512)
     buffered.reset()
     if (head.size >= 5 && String(head.copyOfRange(0, 5), Charsets.US_ASCII) == "%PDF-") {
         return parseBankStatementPdf(buffered, context ?: error("Zum Lesen des Kontoauszug-PDFs wird die Android-PDF-Komponente benötigt."))
@@ -42,7 +58,7 @@ fun parseBankStatement(input: InputStream, context: Context? = null): ParsedBank
 
 /** Reads the first worksheet of an Excel .xlsx export entirely on-device. */
 fun parseBankStatementXlsx(input: InputStream): ParsedBankStatement {
-    val archive = input.readNBytes((MAX_BANK_CSV_BYTES + 1).toInt())
+    val archive = readUpTo(input, (MAX_BANK_CSV_BYTES + 1).toInt())
     require(archive.size <= MAX_BANK_CSV_BYTES) { "Die Excel-Datei ist größer als 20 MB." }
     val entries = mutableMapOf<String, ByteArray>()
     var totalBytes = 0L
@@ -201,7 +217,7 @@ private fun xlsxColumnIndex(reference: String): Int {
  * columns form the net cash movement.
  */
 fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
-    val bytes = input.readNBytes((MAX_BANK_CSV_BYTES + 1).toInt())
+    val bytes = readUpTo(input, (MAX_BANK_CSV_BYTES + 1).toInt())
     require(bytes.size <= MAX_BANK_CSV_BYTES) { "Die CSV-Datei ist größer als 20 MB." }
     val content = decodeBankCsv(bytes)
     val delimiter = listOf(';', ',', '\t').maxBy { candidate -> content.lineSequence().firstOrNull().orEmpty().count { it == candidate } }

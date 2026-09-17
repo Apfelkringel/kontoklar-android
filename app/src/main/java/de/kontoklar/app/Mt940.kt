@@ -14,7 +14,7 @@ private val MT940_DATE = DateTimeFormatter.ofPattern("yyMMdd")
 
 /** Imports read-only MT940/Swift statements locally. No network access or credentials are involved. */
 fun parseMt940(input: InputStream): ParsedBankStatement {
-    val bytes = input.readNBytes((MAX_MT940_BYTES + 1).toInt())
+    val bytes = readUpTo(input, (MAX_MT940_BYTES + 1).toInt())
     require(bytes.size <= MAX_MT940_BYTES) { "Die MT940-Datei ist größer als 20 MB." }
     val content = decodeMt940(bytes)
     val lines = content.replace("\r\n", "\n").replace('\r', '\n').lines()

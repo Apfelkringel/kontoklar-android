@@ -10,6 +10,12 @@ Der Android-Client speichert einen zufälligen Installationsschlüssel in versch
 
 Für einen dauerhaft kostenlosen Betrieb bleibt die API-Basisadresse leer. Dann werden CAMT.053, C24-/comdirect-CSV, C24-Excel-Dateien und Trade-Republic-Kontoauszugs-PDFs vollständig lokal verarbeitet; es entstehen weder finAPI- noch Cloudflare-Banking-Kosten und es werden keine Bank-Zugangsdaten benötigt. Eine automatische Live-Synchronisierung mehrerer Banken ist davon getrennt und benötigt einen externen Anbieter mit eigenen Vertragsbedingungen.
 
+## Eigene kostenlose Lösung statt Aggregator
+
+Die kostenlose Eigenlösung ist bewusst eine lokale Importlösung: KontoKlar liest die offiziellen Auszüge und Dateien auf dem Android-Gerät ein und speichert die normalisierten Buchungen verschlüsselt lokal. Eine PIN-/TAN-Abfrage, ein Passwort-Scraper oder inoffizielle App-Endpunkte werden nicht verwendet.
+
+Für comdirect kann später zusätzlich eine direkte Eigenkonto-Anbindung über die offizielle REST-API ergänzt werden. comdirect beschreibt diese API als kostenlos für eigene Anwendungen und nennt unter anderem Konten, Salden, Umsätze und Depotübersicht; dafür braucht der Kontoinhaber eigene OAuth-Clientdaten aus dem comdirect-Konto. C24 stellt seinen XS2A-Server laut eigener Dokumentation über finAPI bereit. Trade Republic stellt Drittanbietern eine PSD2-Open-Banking-Schnittstelle bereit, aber keinen allgemein kostenlosen privaten Datenfeed. Deshalb können wir ohne laufende Anbietergebühren nicht seriös versprechen, alle drei Banken automatisch live zu synchronisieren.
+
 ## Lokales Prüfen
 
 Im Projektordner:

@@ -160,7 +160,7 @@ fun BankingScreen(
                         }
                     }
                     if (!bankingConfigured) {
-                        Text("Kostenloser Modus aktiv: KontoKlar verarbeitet deine Auszüge direkt auf dem Gerät – ohne finAPI, Abo oder Bankzugang.", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Eigene kostenlose Lösung aktiv: KontoKlar verarbeitet deine Auszüge direkt auf dem Gerät – ohne finAPI, Abo oder Bankzugang.", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         Text("Unterstützt werden CAMT.053, C24-/comdirect-CSV, C24-Excel (.xlsx) und Trade-Republic-Kontoauszüge als PDF. Für automatische Live-Synchronisierung wäre ein externer Open-Banking-Anbieter nötig.", color = Muted, fontSize = 11.sp)
                     } else {
                         Text("Freigabe und Datenabruf laufen über finAPI. PIN und TAN gibst du ausschließlich im Bank-/finAPI-Dialog ein. Umsätze werden vom Anbieter abgerufen und danach in KontoKlar lokal gespeichert.", color = Muted, fontSize = 11.sp)

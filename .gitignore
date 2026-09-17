@@ -15,3 +15,5 @@ banking-api/.env.*
 *.jks
 *.p12
 *.keystore
+# Local source bundles uploaded to Drive; never commit generated archives.
+KontoKlar-Android-*-source.zip

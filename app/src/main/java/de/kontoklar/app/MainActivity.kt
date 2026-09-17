@@ -377,11 +377,11 @@ private fun KontoKlarApp() {
                     connections = liveBankConnections,
                     bankingBusy = bankingBusy,
                     bankingMessage = bankingMessage,
-                    onConnectBank = { institution ->
+                    onConnectBank = { institution, includeSecurities ->
                         scope.launch {
                             bankingBusy = true
                             try {
-                                val session = withContext(Dispatchers.IO) { liveBanking.connect(institution?.id) }
+                                val session = withContext(Dispatchers.IO) { liveBanking.connect(institution?.id, includeSecurities) }
                                 awaitingInitialBankSnapshot = true
                                 try {
                                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(session.authorizationUrl)))

@@ -44,8 +44,9 @@ class LiveBankingClient(context: Context, private val baseUrl: String = BuildCon
         }
     }
 
-    fun connect(bankId: String? = null): BankLinkSession {
-        val payload = JSONObject().apply { bankId?.let { put("bankId", it) } }
+    fun connect(bankId: String? = null, includeSecurities: Boolean = true): BankLinkSession {
+        val accountTypes = JSONArray().put("CHECKING").apply { if (includeSecurities) put("SECURITY") }
+        val payload = JSONObject().put("accountTypes", accountTypes).apply { bankId?.let { put("bankId", it) } }
         val result = request("POST", "/v1/connections", payload)
         val url = URL(result.getString("authorizationUrl"))
         require(url.protocol == "https" && url.host in setOf("webform-sandbox.finapi.io", "webform-live.finapi.io")) {

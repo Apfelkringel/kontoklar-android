@@ -91,6 +91,20 @@ class BankStatementCsvTest {
         assertTrue(parsed.transactions.single().description.contains("Kartenzahlung"))
     }
 
+    @Test fun importsNativeTradeRepublicCsvWithNetAmountAndStableId() {
+        val csv = "datetime,date,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,transaction_id\n" +
+            "2026-09-17T10:00:00Z,2026-09-17,TRADING,BUY,STOCK,ETF,IE00B4L5Y983,1,100.00,-100.00,-1.00,-0.25,EUR,tr-42\n"
+
+        val parsed = parseBankStatementCsv(ByteArrayInputStream(csv.toByteArray(Charsets.UTF_8)))
+
+        assertEquals(1, parsed.transactions.size)
+        assertEquals(-10_125L, parsed.transactions.single().amountCents)
+        assertTrue(parsed.transactions.single().description.contains("BUY"))
+
+        val duplicate = parseBankStatementCsv(ByteArrayInputStream(csv.replace("ETF", "Anderer Name").toByteArray(Charsets.UTF_8)))
+        assertEquals(parsed.transactions.single().id, duplicate.transactions.single().id)
+    }
+
     @Test fun rejectsUnknownExportsAndRowsWithInvalidAmounts() {
         val unknown = "name;sum\nA;12,00"
         assertTrue(runCatching { parseBankStatementCsv(ByteArrayInputStream(unknown.toByteArray())) }.isFailure)

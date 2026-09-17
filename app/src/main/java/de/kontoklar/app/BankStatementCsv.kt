@@ -194,8 +194,10 @@ private fun xlsxColumnIndex(reference: String): Int {
 
 /** Imports supported bank exports without sending them off-device.
  *
- * This also accepts the documented pytr transaction export used by the
- * community for Trade Republic: Date;Type;Value;Name/Note;ISIN;Shares;Taxes;Fees.
+ * This also accepts Trade Republic's native transaction export and the
+ * documented pytr community export. The native export uses
+ * datetime,date,category,type,...,amount,fee,tax,... and its three money
+ * columns form the net cash movement.
  */
 fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
     val bytes = input.readNBytes((MAX_BANK_CSV_BYTES + 1).toInt())
@@ -216,6 +218,11 @@ fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
     fun column(vararg names: String): Int = headers.indexOfFirst { it in names }
     val dateColumn = column("buchungstag", "buchungsdatum", "bookingdate", "date", "datum")
     val amountColumn = column("umsatzineur", "betrag", "amount", "value", "wert")
+    val feeColumn = headers.indexOfFirst { it in setOf("fee", "fees", "gebuehr", "gebuehren") }
+    val taxColumn = headers.indexOfFirst { it in setOf("tax", "taxes", "steuer", "steuern") }
+    val transactionIdColumn = headers.indexOfFirst { it in setOf("transactionid", "transaktionsid", "transactionid") }
+    val officialTradeRepublicCsv = headers.contains("datetime") && headers.contains("assetclass") &&
+        headers.contains("transactionid") && headers.contains("currency")
     val creditColumn = headers.indexOfFirst { it.contains("zahlungseingang") || it == "credit" }
     val debitColumn = headers.indexOfFirst { it.contains("zahlungsausgang") || it == "debit" }
     val typeColumn = headers.indexOfFirst { it in setOf("transaktionstyp", "vorgang", "umsatzart", "typ", "type") }
@@ -243,17 +250,23 @@ fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
                 }
                 if (incoming > 0) incoming else -outgoing
             }
-            else -> parseBankCsvMoneyCents(value(amountColumn)).let { amount ->
-                if (amount != 0L) amount else return@mapNotNull null
+            else -> {
+                val amount = parseBankCsvMoneyCents(value(amountColumn))
+                if (!officialTradeRepublicCsv) amount
+                else amount + listOf(feeColumn, taxColumn)
+                    .filter { it >= 0 }
+                    .sumOf { index -> value(index).takeIf(String::isNotBlank)?.let(::parseBankCsvMoneyCents) ?: 0L }
             }
         }
+        if (signedAmount == 0L) return@mapNotNull null
         require(signedAmount != 0L) { "Eine CSV-Buchung enthält keinen Betrag." }
         val type = value(typeColumn)
         val counterparty = value(counterpartyColumn)
         val purpose = purposeColumns.map(::value).filter(String::isNotBlank).distinct()
         val description = (listOf(type) + purpose).filter(String::isNotBlank).distinct().joinToString(" · ").take(800)
         val iban = value(ibanColumn)
-        val stableFields = listOf(iban, date, signedAmount.toString(), counterparty, description)
+        val sourceId = value(transactionIdColumn)
+        val stableFields = if (sourceId.isNotBlank()) listOf(sourceId) else listOf(iban, date, signedAmount.toString(), counterparty, description)
         val stableKey = stableFields.joinToString("\u001f")
         val ordinal = duplicateOrdinals.getOrDefault(stableKey, 0)
         duplicateOrdinals[stableKey] = ordinal + 1

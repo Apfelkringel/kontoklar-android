@@ -380,15 +380,27 @@ private fun KontoKlarApp() {
                     onConnectBank = { institution ->
                         scope.launch {
                             bankingBusy = true
-                            runCatching {
+                            try {
                                 val session = withContext(Dispatchers.IO) { liveBanking.connect(institution?.id) }
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(session.authorizationUrl)))
                                 awaitingInitialBankSnapshot = true
-                                if (institution == null) "Bankauswahl geöffnet. Wähle deine Bank im sicheren Freigabeformular und kehre danach hierher zurück – KontoKlar prüft die Verbindung automatisch."
-                                else "Freigabe bei ${institution.name} geöffnet. Kehre danach hierher zurück – KontoKlar prüft die Verbindung automatisch."
-                            }.onSuccess { bankingMessage = it }
-                                .onFailure { bankingMessage = it.message ?: "Bankverbindung konnte nicht gestartet werden." }
-                            bankingBusy = false
+                                try {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(session.authorizationUrl)))
+                                } catch (error: Exception) {
+                                    awaitingInitialBankSnapshot = false
+                                    throw error
+                                }
+                                bankingMessage = if (institution == null) {
+                                    "Bankauswahl geöffnet. Wähle deine Bank im sicheren Freigabeformular und kehre danach hierher zurück – KontoKlar prüft die Verbindung automatisch."
+                                } else {
+                                    "Freigabe bei ${institution.name} geöffnet. Kehre danach hierher zurück – KontoKlar prüft die Verbindung automatisch."
+                                }
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (error: Exception) {
+                                bankingMessage = error.message ?: "Bankverbindung konnte nicht gestartet werden."
+                            } finally {
+                                bankingBusy = false
+                            }
                         }
                     },
                     onRefreshConnections = {

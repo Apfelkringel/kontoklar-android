@@ -24,7 +24,7 @@ Die nicht geheime Repository-Variable `KONTOKLAR_BANKING_API_BASE_URL` wird in d
 
 ## Release auslösen
 
-1. `versionCode` erhöhen und `versionName` setzen. Der aktuell veröffentlichte Stand ist `versionCode 83` / `versionName 0.83.0`; für die nächste Änderung beide Werte erhöhen.
+1. `versionCode` erhöhen und `versionName` setzen. Der aktuell veröffentlichte Stand ist `versionCode 84` / `versionName 0.83.1`; für die nächste Änderung beide Werte erhöhen.
 2. `./gradlew testDebugUnitTest assembleDebug` erfolgreich ausführen.
 3. Den gewünschten Quellstand committen und pushen.
 4. Einen neuen Tag erstellen und pushen, zum Beispiel `v0.44.0`.

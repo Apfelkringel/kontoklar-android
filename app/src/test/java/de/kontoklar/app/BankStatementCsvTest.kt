@@ -7,8 +7,27 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import java.time.YearMonth
 
 class BankStatementCsvTest {
+    @Test fun monthlyBankSummaryRespectsMonthBoundariesAndClassifications() {
+        fun transaction(date: String, amount: Long, classification: String = "") = BankTransaction("$date-$amount", "", date, "", "", amount, "", userClassification = classification)
+        val summary = bankMonthSummary(
+            listOf(
+                transaction("2026-01-31", 100_00L, "Geschäftliche Einnahme · ohne Rechnung"),
+                transaction("2026-02-01", -20_00L, "Geschäftliche Ausgabe · ohne Beleg"),
+                transaction("2026-02-28", -5_00L)
+            ),
+            YearMonth.of(2026, 2)
+        )
+        assertEquals(0L, summary.incomeMinor)
+        assertEquals(25_00L, summary.expenseMinor)
+        assertEquals(-25_00L, summary.netMinor)
+        assertEquals(2, summary.transactionCount)
+        assertEquals(1, summary.classifiedCounts["Geschäftliche Ausgabe · ohne Beleg"])
+        assertEquals(1, summary.classifiedCounts["Nicht gekennzeichnet"])
+    }
+
     @Test fun overviewTotalsDoNotMixCurrencies() {
         val accounts = listOf(
             BankAccountSummary("eur", "local", "EUR", "CHECKING", "EUR", 10_000L, ""),

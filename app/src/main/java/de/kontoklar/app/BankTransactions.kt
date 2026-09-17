@@ -6,6 +6,7 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.security.MessageDigest
 import java.time.LocalDate
+import java.time.YearMonth
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 
@@ -37,6 +38,27 @@ fun classifyBankTransaction(transaction: BankTransaction, classification: String
         "Eine zugeordnete Buchung wird über ihre Rechnung oder Ausgabe gekennzeichnet."
     }
     return transaction.copy(userClassification = classification)
+}
+
+data class BankMonthSummary(
+    val yearMonth: YearMonth,
+    val incomeMinor: Long,
+    val expenseMinor: Long,
+    val transactionCount: Int,
+    val classifiedCounts: Map<String, Int>
+) {
+    val netMinor: Long get() = incomeMinor - expenseMinor
+}
+
+internal fun bankMonthSummary(transactions: List<BankTransaction>, yearMonth: YearMonth): BankMonthSummary {
+    val monthTransactions = transactions.filter { runCatching { YearMonth.from(LocalDate.parse(it.date)) == yearMonth }.getOrDefault(false) }
+    return BankMonthSummary(
+        yearMonth = yearMonth,
+        incomeMinor = monthTransactions.filter { it.amountCents > 0 }.sumOf(BankTransaction::amountCents),
+        expenseMinor = monthTransactions.filter { it.amountCents < 0 }.sumOf { -it.amountCents },
+        transactionCount = monthTransactions.size,
+        classifiedCounts = monthTransactions.groupingBy { it.userClassification.ifBlank { "Nicht gekennzeichnet" } }.eachCount()
+    )
 }
 
 data class ParsedBankStatement(

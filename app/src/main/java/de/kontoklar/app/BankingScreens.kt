@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.Locale
+import java.time.YearMonth
 
 @Composable
 fun BankingScreen(
@@ -70,6 +71,7 @@ fun BankingScreen(
     val debits = transactions.filter { it.amountCents < 0 }
     var confirmDeleteBankProfile by remember { mutableStateOf(false) }
     var communityGuideOpen by remember { mutableStateOf(false) }
+    var selectedBankMonth by remember { mutableStateOf(YearMonth.now()) }
     var selectedAdditionalAccountTypes by remember { mutableStateOf(setOf("SECURITY")) }
     val requestedAccountTypes = listOf("CHECKING") + listOf("SAVINGS", "CREDIT_CARD", "SECURITY").filter { it in selectedAdditionalAccountTypes }
     if (confirmDeleteBankProfile) {
@@ -145,6 +147,32 @@ fun BankingScreen(
                         BankMetric("Eingänge", formatEuro(credits.sumOf { it.amountCents }), Modifier.weight(1f))
                         BankMetric("Ausgänge", formatEuro(debits.sumOf { -it.amountCents }), Modifier.weight(1f))
                     }
+                }
+            }
+        }
+        item {
+            val monthSummary = bankMonthSummary(transactions, selectedBankMonth)
+            val monthNames = listOf("Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember")
+            Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Monatsauswertung", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { selectedBankMonth = selectedBankMonth.minusMonths(1) }) { Text("‹", color = Forest, fontSize = 22.sp) }
+                        TextButton(onClick = { if (selectedBankMonth < YearMonth.now()) selectedBankMonth = selectedBankMonth.plusMonths(1) }, enabled = selectedBankMonth < YearMonth.now()) { Text("›", color = Forest, fontSize = 22.sp) }
+                    }
+                    Text("${monthNames[selectedBankMonth.monthValue - 1]} ${selectedBankMonth.year} · ${monthSummary.transactionCount} Buchungen", color = Muted, fontSize = 11.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                        BankMetric("Einnahmen", formatEuro(monthSummary.incomeMinor), Modifier.weight(1f))
+                        BankMetric("Ausgaben", formatEuro(monthSummary.expenseMinor), Modifier.weight(1f))
+                    }
+                    Text("Saldo ${formatEuro(monthSummary.netMinor)}", color = if (monthSummary.netMinor >= 0) Forest else Ink, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    monthSummary.classifiedCounts.entries.sortedByDescending { it.value }.take(4).forEach { (label, count) ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(label, color = Muted, fontSize = 11.sp)
+                            Text("$count", color = Ink, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    Text("Auswertung der lokal gespeicherten Buchungen; keine steuerliche Kategorisierung.", color = Muted, fontSize = 10.sp)
                 }
             }
         }

@@ -383,7 +383,13 @@ private fun KontoKlarApp() {
         Column(Modifier.fillMaxSize().padding(padding)) {
             Header(page.title, profile)
             when (page) {
-                Page.Home -> Dashboard(invoices, expenses, bankTransactions, bankAccounts, bankSecurities, onNavigate = { page = it })
+                Page.Home -> Dashboard(
+                    invoices, expenses, bankTransactions, bankAccounts, bankSecurities,
+                    recurringPlans, recurringExpensePlans,
+                    onNavigate = { page = it },
+                    onOpenRecurringInvoices = { recurringInvoicesOpen = true },
+                    onOpenRecurringExpenses = { recurringExpensesOpen = true }
+                )
                 Page.Invoices -> InvoiceScreen(invoices, onAction = { dialog = it }, onSelect = { selectedInvoice = it })
                 Page.Expenses -> ExpenseScreen(expenses, onAction = { action ->
                     if (action == "E-Rechnung empfangen") incomingInvoiceLauncher.launch(arrayOf("*/*")) else dialog = action
@@ -1074,7 +1080,11 @@ private fun Dashboard(
     bankTransactions: List<BankTransaction>,
     bankAccounts: List<BankAccountSummary>,
     bankSecurities: List<BankSecurityPosition>,
-    onNavigate: (Page) -> Unit
+    recurringPlans: List<RecurringInvoicePlan>,
+    recurringExpensePlans: List<RecurringExpensePlan>,
+    onNavigate: (Page) -> Unit,
+    onOpenRecurringInvoices: () -> Unit,
+    onOpenRecurringExpenses: () -> Unit
 ) {
     var selectedYear by remember { mutableIntStateOf(LocalDate.now().year) }
     val report = remember(selectedYear, invoices, expenses) { taxYearReport(selectedYear, invoices, expenses) }
@@ -1187,6 +1197,23 @@ private fun Dashboard(
         }
         val openInvoices = invoices.filter { it.status != "Entwurf" && invoiceOutstandingCents(it) > 0 }
         if (openInvoices.isNotEmpty()) item { TaskRow("Offene Rechnungen", "Unbezahlte Restbeträge", formatEuro(openInvoices.sumOf(::invoiceOutstandingCents)), Icons.Default.Schedule, onClick = { onNavigate(Page.Invoices) }) }
+        val today = LocalDate.now()
+        val dueInvoicePlans = recurringPlans.filter { it.active && runCatching { !LocalDate.parse(it.nextRunDate).isAfter(today) }.getOrDefault(false) }
+        val dueExpensePlans = recurringExpensePlans.filter { it.active && runCatching { !LocalDate.parse(it.nextRunDate).isAfter(today) }.getOrDefault(false) }
+        if (dueInvoicePlans.isNotEmpty() || dueExpensePlans.isNotEmpty()) item {
+            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7E8)), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Fällige Vorlagen", color = Ink, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("Prüfe die folgenden wiederkehrenden Vorgänge und bestätige sie als neuen Entwurf bzw. Ausgabe.", color = Muted, fontSize = 11.sp)
+                    dueInvoicePlans.forEach { plan ->
+                        TaskRow("Rechnung für ${plan.customer}", "Wiederkehrende Rechnung · ${plan.nextRunDate}", formatEuro(plan.amountCents), Icons.Default.Repeat, onOpenRecurringInvoices)
+                    }
+                    dueExpensePlans.forEach { plan ->
+                        TaskRow("Ausgabe: ${plan.merchant}", "Wiederkehrende Ausgabe · ${plan.nextRunDate}", formatEuro(plan.amountCents), Icons.Default.Repeat, onOpenRecurringExpenses)
+                    }
+                }
+            }
+        }
         item { SectionTitle("Letzte Aktivitäten", "") }
         items((invoices.sortedByDescending { it.date }.take(2).map { Entry(it.customer, "Rechnung · ${it.status}", formatEuro(it.amountCents), Icons.Default.Description, Mint) } + expenses.sortedByDescending { it.date }.take(2).map { Entry(it.merchant, "${it.category} · ${it.date}", "−${formatEuro(it.amountCents)}", Icons.Default.Receipt, Color(0xFFFFF1E5)) }).take(4)) { EntryRow(it) }
         if (invoices.isEmpty() && expenses.isEmpty()) item { EmptyState("Dein Arbeitsbereich ist bereit", "Lege eine Rechnung oder Ausgabe an. Deine Daten bleiben auf diesem Gerät.") }

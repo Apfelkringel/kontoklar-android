@@ -28,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,7 +54,7 @@ fun BankingScreen(
     connections: List<LiveBankConnection>,
     bankingBusy: Boolean,
     bankingMessage: String?,
-    onConnectBank: (BankingInstitution?) -> Unit,
+    onConnectBank: (BankingInstitution?, Boolean) -> Unit,
     onRefreshConnections: () -> Unit,
     onSyncConnection: (LiveBankConnection) -> Unit,
     onDeleteConnection: (LiveBankConnection) -> Unit,
@@ -66,6 +67,7 @@ fun BankingScreen(
     val credits = transactions.filter { it.amountCents > 0 }
     val debits = transactions.filter { it.amountCents < 0 }
     var confirmDeleteBankProfile by remember { mutableStateOf(false) }
+    var includeSecurities by remember { mutableStateOf(true) }
     if (confirmDeleteBankProfile) {
         AlertDialog(
             onDismissRequest = { confirmDeleteBankProfile = false },
@@ -133,12 +135,21 @@ fun BankingScreen(
                         }
                         if (bankingConfigured) TextButton(onClick = onRefreshConnections, enabled = !bankingBusy) { Text("Aktualisieren") }
                     }
+                    if (bankingConfigured) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Wertpapierdepots mit abrufen", color = Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Kann eine zusätzliche Freigabe bei der Bank erfordern.", color = Muted, fontSize = 11.sp)
+                            }
+                            Switch(checked = includeSecurities, onCheckedChange = { includeSecurities = it }, enabled = !bankingBusy)
+                        }
+                    }
                     if (!bankingConfigured) {
                         Text("Noch nicht aktiv: Der sichere Open-Banking-Server und der Anbieterzugang müssen zuerst eingerichtet werden.", color = Muted, fontSize = 12.sp)
                     } else {
                         Text("Freigabe und Datenabruf laufen über finAPI. PIN und TAN gibst du ausschließlich im Bank-/finAPI-Dialog ein. Umsätze werden vom Anbieter abgerufen und danach in KontoKlar lokal gespeichert.", color = Muted, fontSize = 11.sp)
                         Button(
-                            onClick = { onConnectBank(null) }, enabled = !bankingBusy,
+                            onClick = { onConnectBank(null, includeSecurities) }, enabled = !bankingBusy,
                             modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Forest)
                         ) { Text("Bank suchen und verbinden") }
@@ -151,7 +162,7 @@ fun BankingScreen(
                         }
                         institutions.forEach { institution ->
                             OutlinedButton(
-                                onClick = { onConnectBank(institution) }, enabled = !bankingBusy,
+                                onClick = { onConnectBank(institution, includeSecurities) }, enabled = !bankingBusy,
                                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
                             ) { Text("${institution.name} direkt verbinden") }
                         }

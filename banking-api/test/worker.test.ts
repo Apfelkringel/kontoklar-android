@@ -192,7 +192,7 @@ test("starts the provider-hosted bank search without preselecting a bank", async
     const response = await worker.fetch(new Request("https://api.test/v1/connections", {
       method: "POST",
       headers: { Authorization: `Bearer ${"S".repeat(43)}`, "CF-Connecting-IP": "192.0.2.12", "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ accountTypes: ["CHECKING"] }),
     }), env as never, {} as never);
     assert.equal(response.status, 201);
     assert.deepEqual(await response.json(), {
@@ -201,7 +201,7 @@ test("starts the provider-hosted bank search without preselecting a bank", async
     });
     assert.ok(importPayload);
     assert.equal("bank" in importPayload!, false);
-    assert.deepEqual(importPayload!.accountTypes, ["CHECKING", "SECURITY"]);
+    assert.deepEqual(importPayload!.accountTypes, ["CHECKING"]);
     assert.equal(importPayload!.bankConnectionName, "KontoKlar – Bankverbindung");
   } finally {
     globalThis.fetch = originalFetch;

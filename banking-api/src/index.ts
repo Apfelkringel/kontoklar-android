@@ -17,6 +17,7 @@ const TARGET_BANKS = [
 const MAX_JSON_BYTES = 64 * 1024;
 const TRANSACTIONS_PER_PAGE = 100;
 const MAX_TRANSACTION_PAGES = 50;
+const ALLOWED_ACCOUNT_TYPES = new Set(["CHECKING", "SAVINGS", "CREDIT_CARD", "SECURITY"]);
 const ACCESS_HOSTS = new Set(["sandbox.finapi.io", "live.finapi.io"]);
 const WEB_FORM_HOSTS = new Set(["webform-sandbox.finapi.io", "webform-live.finapi.io"]);
 
@@ -45,6 +46,7 @@ export default {
       if (request.method === "POST" && path === "/v1/connections") {
         const body = await readJson(request);
         const requestedBankId = body.bankId;
+        const accountTypes = parseAccountTypes(body.accountTypes);
         let bank: { id: string; name: string } | undefined;
         if (requestedBankId !== undefined) {
           if (typeof requestedBankId !== "string" || !/^\d{1,12}$/.test(requestedBankId)) {
@@ -57,8 +59,7 @@ export default {
           bankConnectionName: bank ? `KontoKlar – ${bank.name}` : "KontoKlar – Bankverbindung",
           // Let Web Form 2.0 search and select a bank when no quick-pick was requested.
           ...(bank ? { bank: { id: Number(bank.id) } } : {}),
-          // Checking plus securities covers the user's primary banking and broker accounts.
-          accountTypes: ["CHECKING", "SECURITY"],
+          accountTypes,
           maxDaysForDownload: 90,
           skipBalancesDownload: false,
           skipPositionsDownload: false,
@@ -589,6 +590,18 @@ async function readJson(request: Request): Promise<Record<string, unknown>> {
   } catch {
     throw new HttpError(400, "Ungültige JSON-Anfrage.");
   }
+}
+
+function parseAccountTypes(value: unknown): string[] {
+  if (value === undefined) return ["CHECKING", "SECURITY"];
+  if (!Array.isArray(value) || value.length === 0 || value.length > ALLOWED_ACCOUNT_TYPES.size) {
+    throw new HttpError(400, "Bitte mindestens einen gültigen Kontotyp auswählen.");
+  }
+  const accountTypes = value.map((item) => typeof item === "string" ? item : "");
+  if (accountTypes.some((item) => !ALLOWED_ACCOUNT_TYPES.has(item)) || new Set(accountTypes).size !== accountTypes.length) {
+    throw new HttpError(400, "Die Auswahl enthält einen ungültigen oder doppelten Kontotyp.");
+  }
+  return accountTypes;
 }
 
 async function readLimitedText(stream: ReadableStream<Uint8Array> | null, limit: number, message: string): Promise<string> {

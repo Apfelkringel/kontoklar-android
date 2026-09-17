@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -90,7 +91,7 @@ private fun KontoKlarApp() {
     val liveBanking = remember { LiveBankingClient(context.applicationContext) }
     var bankInstitutions by remember { mutableStateOf<List<BankingInstitution>>(emptyList()) }
     var liveBankConnections by remember { mutableStateOf<List<LiveBankConnection>>(emptyList()) }
-    var awaitingInitialBankSnapshot by remember { mutableStateOf(false) }
+    var awaitingInitialBankSnapshot by rememberSaveable { mutableStateOf(false) }
     var bankingBusy by remember { mutableStateOf(false) }
     var bankingMessage by remember { mutableStateOf<String?>(null) }
     var customers by remember { mutableStateOf(store.customers()) }

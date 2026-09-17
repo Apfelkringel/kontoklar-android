@@ -14,7 +14,9 @@ Für einen dauerhaft kostenlosen Betrieb bleibt die API-Basisadresse leer. Dann 
 
 Die kostenlose Eigenlösung ist bewusst eine lokale Importlösung: KontoKlar liest die offiziellen Auszüge und Dateien auf dem Android-Gerät ein und speichert die normalisierten Buchungen verschlüsselt lokal. Eine PIN-/TAN-Abfrage, ein Passwort-Scraper oder inoffizielle App-Endpunkte werden nicht verwendet.
 
-Für comdirect kann später zusätzlich eine direkte Eigenkonto-Anbindung über die offizielle REST-API ergänzt werden. comdirect beschreibt diese API als kostenlos für eigene Anwendungen und nennt unter anderem Konten, Salden, Umsätze und Depotübersicht; dafür braucht der Kontoinhaber eigene OAuth-Clientdaten aus dem comdirect-Konto. C24 stellt seinen XS2A-Server laut eigener Dokumentation über finAPI bereit. Trade Republic stellt Drittanbietern eine PSD2-Open-Banking-Schnittstelle bereit, aber keinen allgemein kostenlosen privaten Datenfeed. Deshalb können wir ohne laufende Anbietergebühren nicht seriös versprechen, alle drei Banken automatisch live zu synchronisieren.
+Für comdirect ist jetzt zusätzlich ein direkter, schreibgeschützter Eigenkonto-Adapter im Android-Projekt enthalten (`ComdirectReadOnlyClient`). Er verarbeitet einen vom offiziellen comdirect-OAuth-Ablauf erhaltenen Zugriffstoken nur im Arbeitsspeicher und liest Kontostände, gebuchte Umsätze und Depotpositionen. PIN, Passwort und Token werden von diesem Adapter nicht gespeichert; Überweisungen, Orders und andere Schreiboperationen existieren absichtlich nicht. Der OAuth-/Session-TAN-Ablauf bleibt ein eigener Freigabeschritt und muss mit den eigenen comdirect-Clientdaten getestet werden.
+
+comdirect beschreibt diese API als kostenlos für eigene Anwendungen und nennt unter anderem Konten, Salden, Umsätze und Depotübersicht. C24 stellt seinen XS2A-Server laut eigener Dokumentation über finAPI bereit. Trade Republic stellt Drittanbietern eine PSD2-Open-Banking-Schnittstelle bereit, aber keinen allgemein kostenlosen privaten Datenfeed. Deshalb können wir ohne laufende Anbietergebühren nicht seriös versprechen, alle drei Banken automatisch live zu synchronisieren.
 
 ## Lokales Prüfen
 

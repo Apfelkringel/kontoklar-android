@@ -12,6 +12,7 @@ import java.text.Normalizer
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.zip.ZipInputStream
+import kotlin.math.roundToLong
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 
@@ -233,9 +234,14 @@ fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
         index.takeIf { header in setOf("verwendungszweck", "buchungstext", "beschreibung", "purpose", "description", "remittance") }
     }
     val ibanColumn = headers.indexOfFirst { it == "iban" || it.contains("iban") }
+    val symbolColumn = headers.indexOfFirst { it == "symbol" || it == "isin" }
+    val sharesColumn = headers.indexOfFirst { it == "shares" || it == "stuck" || it == "anteile" }
+    val priceColumn = headers.indexOfFirst { it == "price" || it == "kurs" }
+    val currencyColumn = headers.indexOfFirst { it == "currency" || it == "waehrung" }
     require(dateColumn >= 0 && (amountColumn >= 0 || creditColumn >= 0 || debitColumn >= 0)) { "In der CSV fehlen Buchungsdatum oder Betrag." }
 
     val duplicateOrdinals = mutableMapOf<String, Int>()
+    val nativeTradeRows = mutableListOf<NativeTradeRow>()
     val parsed = rows.drop(headerIndex + 1).asSequence().filter { it.any(String::isNotBlank) }.mapNotNull { row ->
         fun value(index: Int): String = row.getOrNull(index)?.trim().orEmpty()
         val rawDate = value(dateColumn)
@@ -266,6 +272,20 @@ fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
         val description = (listOf(type) + purpose).filter(String::isNotBlank).distinct().joinToString(" · ").take(800)
         val iban = value(ibanColumn)
         val sourceId = value(transactionIdColumn)
+        if (officialTradeRepublicCsv && symbolColumn >= 0 && sharesColumn >= 0 && typeColumn >= 0) {
+            parseBankCsvQuantity(value(sharesColumn))?.takeIf { it > 0.0 }?.let { shares ->
+                nativeTradeRows += NativeTradeRow(
+                    id = sourceId,
+                    type = type,
+                    isin = value(symbolColumn),
+                    name = counterparty,
+                    shares = shares,
+                    priceMinor = priceColumn.takeIf { it >= 0 }?.let { index -> value(index).takeIf(String::isNotBlank)?.let(::parseBankCsvMoneyCents) },
+                    currency = value(currencyColumn).ifBlank { "EUR" },
+                    date = date
+                )
+            }
+        }
         val stableFields = if (sourceId.isNotBlank()) listOf(sourceId) else listOf(iban, date, signedAmount.toString(), counterparty, description)
         val stableKey = stableFields.joinToString("\u001f")
         val ordinal = duplicateOrdinals.getOrDefault(stableKey, 0)
@@ -276,8 +296,55 @@ fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
     }.toList()
     require(parsed.isNotEmpty()) { "Die CSV-Datei enthält keine importierbaren Buchungen." }
     require(parsed.size <= MAX_BANK_CSV_ROWS) { "Die CSV-Datei enthält mehr als $MAX_BANK_CSV_ROWS Buchungen." }
-    return ParsedBankStatement(parsed.map(BankTransaction::accountIban).filter(String::isNotBlank).distinct(), parsed)
+    return ParsedBankStatement(parsed.map(BankTransaction::accountIban).filter(String::isNotBlank).distinct(), parsed, aggregateNativeTradeRepublicPositions(nativeTradeRows))
 }
+
+private data class NativeTradeRow(
+    val id: String,
+    val type: String,
+    val isin: String,
+    val name: String,
+    val shares: Double,
+    val priceMinor: Long?,
+    val currency: String,
+    val date: String
+)
+
+private fun aggregateNativeTradeRepublicPositions(rows: List<NativeTradeRow>): List<BankSecurityPosition> {
+    if (rows.isEmpty()) return emptyList()
+    return rows.groupBy { it.isin.ifBlank { it.name } }.mapNotNull { (key, group) ->
+        val latest = group.maxByOrNull { it.date } ?: return@mapNotNull null
+        val quantity = group.sumOf { row ->
+            when (row.type.uppercase()) {
+                "SELL", "REMOVAL" -> -row.shares
+                "BUY", "DEPOSIT", "SAVINGS_PLAN_EXECUTED" -> row.shares
+                else -> 0.0
+            }
+        }
+        if (quantity <= 0.0000001) return@mapNotNull null
+        val marketValue = latest.priceMinor?.let { (it.toDouble() * quantity).roundToLong() }
+        BankSecurityPosition(
+            id = "trade-republic:csv:${key.ifBlank { latest.id }}",
+            accountId = LOCAL_TRADE_REPUBLIC_ACCOUNT_ID,
+            connectionId = LOCAL_TRADE_REPUBLIC_CONNECTION_ID,
+            name = latest.name.ifBlank { key },
+            isin = latest.isin,
+            wkn = "",
+            quantityNominal = quantity,
+            quantityType = "Stück",
+            quoteType = "",
+            quoteMinor = latest.priceMinor,
+            quoteCurrency = latest.currency,
+            marketValueMinor = marketValue,
+            marketValueCurrency = latest.currency,
+            profitOrLossMinor = null,
+            quoteDate = latest.date
+        )
+    }
+}
+
+internal const val LOCAL_TRADE_REPUBLIC_ACCOUNT_ID = "local:trade-republic-csv"
+private const val LOCAL_TRADE_REPUBLIC_CONNECTION_ID = "local:trade-republic-csv"
 
 private fun decodeBankCsv(bytes: ByteArray): String {
     val decoded = when {
@@ -344,4 +411,11 @@ private fun parseBankCsvMoneyCents(value: String): Long {
     require(cleaned.isNotBlank()) { "Eine CSV-Buchung enthält keinen Betrag." }
     val normalized = if (cleaned.contains(',')) cleaned.replace(".", "").replace(',', '.') else cleaned
     return BigDecimal(normalized).setScale(2, RoundingMode.UNNECESSARY).movePointRight(2).longValueExact()
+}
+
+private fun parseBankCsvQuantity(value: String): Double? {
+    if (value.isBlank()) return null
+    val cleaned = value.trim().replace("\u00a0", "").replace(" ", "")
+    val normalized = if (cleaned.contains(',')) cleaned.replace(".", "").replace(',', '.') else cleaned
+    return normalized.toDoubleOrNull()?.takeIf { it.isFinite() && it >= 0.0 }
 }

@@ -100,6 +100,10 @@ class BankStatementCsvTest {
         assertEquals(1, parsed.transactions.size)
         assertEquals(-10_125L, parsed.transactions.single().amountCents)
         assertTrue(parsed.transactions.single().description.contains("BUY"))
+        assertEquals(1, parsed.securities.size)
+        assertEquals("IE00B4L5Y983", parsed.securities.single().isin)
+        assertEquals(1.0, parsed.securities.single().quantityNominal!!, 0.000001)
+        assertEquals(10_000L, parsed.securities.single().marketValueMinor)
 
         val duplicate = parseBankStatementCsv(ByteArrayInputStream(csv.replace("ETF", "Anderer Name").toByteArray(Charsets.UTF_8)))
         assertEquals(parsed.transactions.single().id, duplicate.transactions.single().id)

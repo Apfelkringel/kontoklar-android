@@ -39,7 +39,11 @@ fun classifyBankTransaction(transaction: BankTransaction, classification: String
     return transaction.copy(userClassification = classification)
 }
 
-data class ParsedBankStatement(val accountIbans: List<String>, val transactions: List<BankTransaction>)
+data class ParsedBankStatement(
+    val accountIbans: List<String>,
+    val transactions: List<BankTransaction>,
+    val securities: List<BankSecurityPosition> = emptyList()
+)
 
 private const val MAX_CAMT_BYTES = 20L * 1024 * 1024
 private const val CAMT_ENTRY_LIMIT = 50_000

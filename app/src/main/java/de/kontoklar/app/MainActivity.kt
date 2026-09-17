@@ -180,12 +180,28 @@ private fun KontoKlarApp() {
             }.onSuccess { statement ->
                 val existingIds = bankTransactions.mapTo(hashSetOf(), BankTransaction::id)
                 val newTransactions = statement.transactions.filterNot { it.id in existingIds }
+                if (statement.securities.isNotEmpty()) {
+                    val localAccount = BankAccountSummary(
+                        id = LOCAL_TRADE_REPUBLIC_ACCOUNT_ID,
+                        connectionId = "local:trade-republic-csv",
+                        name = "Trade Republic · CSV-Depot",
+                        type = "SECURITY",
+                        currency = "EUR",
+                        balanceMinor = null,
+                        asOfDate = statement.securities.maxOfOrNull { it.quoteDate }.orEmpty()
+                    )
+                    bankAccounts = bankAccounts.filterNot { it.id == localAccount.id } + localAccount
+                    bankSecurities = bankSecurities.filterNot { it.connectionId == localAccount.connectionId } + statement.securities
+                    store.saveBankAccounts(bankAccounts)
+                    store.saveBankSecurities(bankSecurities)
+                }
                 if (newTransactions.isEmpty()) toast = "Alle Buchungen aus diesem Kontoauszug wurden bereits importiert."
                 else {
                     bankTransactions = newTransactions + bankTransactions
                     store.saveBankTransactions(bankTransactions)
                     val accountText = statement.accountIbans.singleOrNull()?.takeLast(4)?.let { " · Konto ••••$it" }.orEmpty()
-                    toast = "${newTransactions.size} Bankumsätze importiert$accountText"
+                    val positionText = statement.securities.size.takeIf { it > 0 }?.let { " und $it Depotpositionen" }.orEmpty()
+                    toast = "${newTransactions.size} Bankumsätze$positionText importiert$accountText"
                 }
             }.onFailure { toast = it.message ?: "Der Kontoauszug konnte nicht importiert werden." }
         }

@@ -1647,6 +1647,15 @@ private fun AppUpdateCard() {
                     Text(if (hasUpdate) "Version ${latest.version} ist verfügbar." else "Du verwendest die aktuelle Version (${latest.version}).", color = if (hasUpdate) Forest else Muted, fontSize = 12.sp)
                     if (latest.notes.isNotBlank()) Text(latest.notes, color = Muted, fontSize = 11.sp, maxLines = 5)
                     if (latest.notes.isNotBlank()) TextButton(onClick = { openNotesDialog = true }) { Text("Vollständige Notizen anzeigen", color = Forest, fontSize = 12.sp) }
+                    if (latest.apkUrl.isNotBlank()) TextButton(onClick = {
+                        val shareText = "KontoKlar v${latest.version} ist verfügbar. APK: ${latest.apkUrl}" + if (latest.notes.isNotBlank()) "\n\n${latest.notes}" else ""
+                        val intent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_SUBJECT, "KontoKlar v${latest.version}")
+                            putExtra(Intent.EXTRA_TEXT, shareText)
+                        }
+                        context.startActivity(Intent.createChooser(intent, "Update teilen"))
+                    }) { Text("Update-Link teilen", color = Forest, fontSize = 12.sp) }
                     if (hasUpdate) {
                         Button(
                             onClick = {

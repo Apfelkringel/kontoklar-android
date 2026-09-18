@@ -1525,6 +1525,7 @@ private fun AppUpdateCard() {
     var checking by remember { mutableStateOf(false) }
     var downloading by remember { mutableStateOf(false) }
     var installerOpened by remember { mutableStateOf(false) }
+    var openNotesDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val checkForUpdates: () -> Unit = {
         if (!checking && !downloading) {
@@ -1592,6 +1593,7 @@ private fun AppUpdateCard() {
                     val hasUpdate = isNewerVersion(latest.version, BuildConfig.VERSION_NAME)
                     Text(if (hasUpdate) "Version ${latest.version} ist verfügbar." else "Du verwendest die aktuelle Version (${latest.version}).", color = if (hasUpdate) Forest else Muted, fontSize = 12.sp)
                     if (latest.notes.isNotBlank()) Text(latest.notes, color = Muted, fontSize = 11.sp, maxLines = 5)
+                    if (latest.notes.isNotBlank()) TextButton(onClick = { openNotesDialog = true }) { Text("Vollständige Notizen anzeigen", color = Forest, fontSize = 12.sp) }
                     if (hasUpdate) {
                         Button(
                             onClick = {
@@ -1624,6 +1626,23 @@ private fun AppUpdateCard() {
             if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
             Text("Downloads kommen signiert aus den öffentlichen GitHub-Releases. Android zeigt vor dem Installieren seine Systembestätigung.", color = Muted, fontSize = 10.sp)
         }
+    }
+    if (openNotesDialog && release != null) {
+        val latest = release!!
+        AlertDialog(
+            onDismissRequest = { openNotesDialog = false },
+            title = { Text("Release v${latest.version}") },
+            text = { Text(latest.notes.ifBlank { "Keine Beschreibung vorhanden." }, color = Ink, fontSize = 13.sp) },
+            confirmButton = { TextButton(onClick = { openNotesDialog = false }) { Text("Schließen", color = Forest) } },
+            dismissButton = {
+                TextButton(onClick = {
+                    openNotesDialog = false
+                    val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse(latest.apkUrl))
+                    if (viewIntent.resolveActivity(context.packageManager) != null) context.startActivity(viewIntent)
+                }) { Text("Im Browser öffnen", color = Forest) }
+            },
+            containerColor = Color.White
+        )
     }
 }
 

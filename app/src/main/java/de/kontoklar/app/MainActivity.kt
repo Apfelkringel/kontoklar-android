@@ -1484,11 +1484,64 @@ private fun SupportDialog(onDismiss: () -> Unit) {
 
 @Composable
 private fun MoreScreen(profile: BusinessProfile, onAction: (String) -> Unit) {
-    val links = listOf("Kontoauszüge & Abgleich" to Icons.Default.AccountBalanceWallet, "Kunden" to Icons.Default.People, "Angebote" to Icons.Default.RequestQuote, "Produkte & Dienstleistungen" to Icons.Default.Inventory2, "Wiederkehrende Rechnungen" to Icons.Default.Repeat, "Wiederkehrende Ausgaben" to Icons.Default.Repeat, "Dokumente" to Icons.Default.Folder, "Steuerübersicht" to Icons.Default.AutoAwesome, "Mit Buchhalter teilen" to Icons.Default.Share, "Einstellungen" to Icons.Default.Settings, "Hilfe & Support" to Icons.Default.HelpOutline)
+    var releaseHistoryOpen by remember { mutableStateOf(false) }
+    val links = listOf("Kontoauszüge & Abgleich" to Icons.Default.AccountBalanceWallet, "Kunden" to Icons.Default.People, "Angebote" to Icons.Default.RequestQuote, "Produkte & Dienstleistungen" to Icons.Default.Inventory2, "Wiederkehrende Rechnungen" to Icons.Default.Repeat, "Wiederkehrende Ausgaben" to Icons.Default.Repeat, "Dokumente" to Icons.Default.Folder, "Steuerübersicht" to Icons.Default.AutoAwesome, "Mit Buchhalter teilen" to Icons.Default.Share, "Einstellungen" to Icons.Default.Settings, "Versionshinweise" to Icons.Default.History, "Hilfe & Support" to Icons.Default.HelpOutline)
     LazyColumn(contentPadding = PaddingValues(18.dp, 14.dp, 18.dp, 90.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(18.dp)) { Text(profile.businessName.ifBlank { profile.contactName }.ifBlank { "Unternehmensprofil" }, fontWeight = FontWeight.Bold, color = Ink, fontSize = 18.sp); Text(listOf(profile.activity, profile.legalForm, profile.street, listOf(profile.postalCode, profile.city).filter(String::isNotBlank).joinToString(" ")).filter(String::isNotBlank).joinToString(" · ").ifBlank { if (profile.businessName.isBlank() && profile.contactName.isBlank()) "Noch nicht eingerichtet · Daten bleiben lokal" else "Lokale Unternehmensdaten" }, color = Muted, fontSize = 13.sp) } } }
         item { AppUpdateCard() }
-        items(links) { (label, icon) -> Row(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(14.dp)).clickable { onAction(label) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(icon, null, tint = Forest); Spacer(Modifier.width(14.dp)); Text(label, color = Ink, modifier = Modifier.weight(1f)); Icon(Icons.Default.ChevronRight, null, tint = Muted) } }
+        items(links) { (label, icon) -> Row(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(14.dp)).clickable { if (label == "Versionshinweise") releaseHistoryOpen = true else onAction(label) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(icon, null, tint = Forest); Spacer(Modifier.width(14.dp)); Text(label, color = Ink, modifier = Modifier.weight(1f)); Icon(Icons.Default.ChevronRight, null, tint = Muted) } }
+    }
+    if (releaseHistoryOpen) {
+        ReleaseHistoryScreen(onClose = { releaseHistoryOpen = false })
+    }
+}
+
+@Composable
+private fun ReleaseHistoryScreen(onClose: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var entries by remember { mutableStateOf<List<ReleaseHistoryEntry>>(emptyList()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var loading by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        loading = true
+        runCatching { fetchReleaseHistory(10) }
+            .onSuccess { entries = it; error = null }
+            .onFailure { error = it.message ?: "Versionshinweise konnten nicht geladen werden." }
+        loading = false
+    }
+    val ctx = LocalContext.current
+    Column(Modifier.fillMaxSize().background(Mint).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.History, null, tint = Forest)
+            Spacer(Modifier.width(10.dp))
+            Text("Versionshinweise", color = Ink, fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.weight(1f))
+            TextButton(onClick = onClose) { Text("Schließen", color = Forest) }
+        }
+        Text("Alle öffentlichen GitHub-Releases für KontoKlar werden hier lokal aus dem öffentlichen API geladen.", color = Muted, fontSize = 11.sp)
+        when {
+            loading -> Text("Lade Versionsverlauf …", color = Muted, fontSize = 12.sp)
+            error != null -> Text(error!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+            entries.isEmpty() -> Text("Bisher sind keine Releases verfügbar.", color = Muted, fontSize = 12.sp)
+            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(entries, key = { it.version + it.publishedAt }) { entry ->
+                    Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("v${entry.version}", color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                                if (entry.apkUrl.isNotBlank()) {
+                                    TextButton(onClick = {
+                                        val view = Intent(Intent.ACTION_VIEW, Uri.parse(entry.apkUrl))
+                                        if (view.resolveActivity(ctx.packageManager) != null) ctx.startActivity(view)
+                                    }) { Text("APK öffnen", color = Forest) }
+                                }
+                            }
+                            if (entry.publishedAt.isNotBlank()) Text(entry.publishedAt.take(10), color = Muted, fontSize = 11.sp)
+                            Text(entry.notes.ifBlank { "Keine Beschreibung vorhanden." }, color = Ink, fontSize = 13.sp)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

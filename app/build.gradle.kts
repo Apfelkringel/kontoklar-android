@@ -42,8 +42,8 @@ android {
         minSdk = 26
         targetSdk = 35
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 89
-        versionName = "0.83.6"
+        versionCode = 90
+        versionName = "0.83.7"
         val bankingApiBaseUrl = providers.gradleProperty("KONTOKLAR_BANKING_API_BASE_URL")
             .orElse(providers.environmentVariable("KONTOKLAR_BANKING_API_BASE_URL"))
             .orElse("")

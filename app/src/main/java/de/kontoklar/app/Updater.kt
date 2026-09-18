@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
@@ -13,6 +14,34 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 data class AppRelease(val version: String, val apkUrl: String, val sha256: String, val notes: String)
+
+data class ReleaseHistoryEntry(val version: String, val publishedAt: String, val notes: String, val apkUrl: String)
+
+suspend fun fetchReleaseHistory(limit: Int = 10): List<ReleaseHistoryEntry> = withContext(Dispatchers.IO) {
+    val connection = URL("https://api.github.com/repos/Apfelkringel/kontoklar-android/releases?per_page=$limit")
+        .openConnection() as HttpURLConnection
+    try {
+        connection.connectTimeout = 10_000
+        connection.readTimeout = 10_000
+        connection.setRequestProperty("Accept", "application/vnd.github+json")
+        connection.setRequestProperty("User-Agent", "KontoKlar-Android-Updater")
+        require(connection.responseCode in 200..299) { "GitHub antwortet mit HTTP ${connection.responseCode}." }
+        val releases = JSONArray(connection.inputStream.bufferedReader().use { it.readText() })
+        (0 until releases.length()).map { index ->
+            val release = releases.getJSONObject(index)
+            val tag = release.getString("tag_name")
+            val notes = release.optString("body").trim()
+            val publishedAt = release.optString("published_at")
+            val apkUrl = (0 until (release.optJSONArray("assets")?.length() ?: 0)).mapNotNull { i ->
+                val asset = release.getJSONArray("assets").getJSONObject(i)
+                if (asset.optString("name").endsWith(".apk", ignoreCase = true)) asset.optString("browser_download_url") else null
+            }.firstOrNull().orEmpty()
+            ReleaseHistoryEntry(tag.removePrefix("v"), publishedAt, notes.take(1500), apkUrl)
+        }
+    } finally {
+        connection.disconnect()
+    }
+}
 
 suspend fun fetchLatestRelease(): AppRelease = withContext(Dispatchers.IO) {
     val connection = URL("https://api.github.com/repos/Apfelkringel/kontoklar-android/releases/latest")

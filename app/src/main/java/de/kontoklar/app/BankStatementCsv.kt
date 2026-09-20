@@ -227,14 +227,17 @@ fun parseBankStatementCsv(input: InputStream): ParsedBankStatement {
         headers.any { it in setOf("buchungstag", "buchungsdatum", "bookingdate", "date", "datum") } &&
             headers.any {
                 it.contains("umsatzineur") || it == "betrag" || it == "amount" || it == "value" ||
-                    it == "wert" || it.contains("zahlungseingang")
+                    it == "wert" || it == "betragineur" || it == "betrageur" ||
+                    it == "saldonachbuchung" || it.contains("zahlungseingang")
             }
     }
-    require(headerIndex >= 0) { "Die CSV-Datei sieht nicht wie ein unterstützter C24- oder comdirect-Umsatzexport aus." }
+    require(headerIndex >= 0) { "Die CSV-Datei sieht nicht wie ein unterstützter Umsatzexport aus (C24, comdirect, DKB, ING, N26)." }
     val headers = rows[headerIndex].map(::normalizeBankCsvHeader)
     fun column(vararg names: String): Int = headers.indexOfFirst { it in names }
     val dateColumn = column("buchungstag", "buchungsdatum", "bookingdate", "date", "datum")
-    val amountColumn = column("umsatzineur", "betrag", "amount", "value", "wert")
+    val amountColumn = column(
+        "umsatzineur", "betrag", "amount", "value", "wert", "betragineur", "betrageur", "saldonachbuchung"
+    )
     val feeColumn = headers.indexOfFirst { it in setOf("fee", "fees", "gebuehr", "gebuehren") }
     val taxColumn = headers.indexOfFirst { it in setOf("tax", "taxes", "steuer", "steuern") }
     val transactionIdColumn = headers.indexOfFirst { it in setOf("transactionid", "transaktionsid", "transactionid") }

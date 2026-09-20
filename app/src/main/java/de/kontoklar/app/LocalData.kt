@@ -1,6 +1,7 @@
 package de.kontoklar.app
 
 import android.content.Context
+import android.net.Uri
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
@@ -175,6 +176,11 @@ class LocalData(context: Context) {
     private val prefs = SecureLocalPreferences(context)
 
     fun clearAllLocalData(): Boolean = prefs.clear()
+
+    fun backupDriveFolder(): String? = prefs.getString("backup_drive_folder")
+
+    fun saveBackupDriveFolder(value: Uri): Boolean =
+        prefs.putString("backup_drive_folder", value.toString())
 
     fun exportSnapshot(): JSONObject = JSONObject()
         .put("schemaVersion", 1)

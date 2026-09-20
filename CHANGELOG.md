@@ -2,6 +2,14 @@
 
 Alle veröffentlichten Versionen werden signiert über GitHub Actions bereitgestellt; die App lädt Updates direkt aus dem öffentlichen GitHub-Release und verifiziert SHA-256, Paket-ID, Versionscode und Signaturzertifikat, bevor sie Android den Paketinstaller anzeigt.
 
+## v0.83.9 – 20.09.2026
+
+- Weitere kostenlose Bankimporte: CSV-Parser unterstützt jetzt auch DKB („Betrag (EUR)“), ING („Saldo nach Buchung“) und N26-Exporte neben C24 und comdirect.
+- Verschlüsseltes Backup direkt in den gewählten Google-Drive-Ordner: SAF-Picker öffnet den zuletzt verwendeten Drive-Ordner, Datei wird AES-verschlüsselt gespeichert.
+- Neuer Einstellungspunkt „Open-Source-Lizenzen“ mit allen verwendeten Bibliothekslizenzen.
+- Deutsch/Englisch-Lokalisierung der Kern-Navigation, des Dokumente-Dialogs und der MoreScreen-Menüeinträge.
+- Version 92 / 0.83.9.
+
 ## v0.83.5 – 17.09.2026
 
 - Empfohlene Reihenfolge für kostenlose Bankimporte angepasst: offizieller Trade-Republic-Transaktions-Export bzw. Kontoauszug-PDF zuerst, pytr nur als optionaler Fallback außerhalb der App.

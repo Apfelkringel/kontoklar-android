@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">KontoKlar</string>
+    <string name="nav_overview">Overview</string>
+    <string name="nav_invoices">Invoices</string>
+    <string name="nav_expenses">Expenses</string>
+    <string name="nav_banking">Banking</string>
+    <string name="nav_taxes">Taxes</string>
+    <string name="nav_more">More</string>
+    <string name="action_save">Save</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_close">Close</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_share">Share</string>
+    <string name="action_statements">Statements &amp; reconciliation</string>
+    <string name="backup_export">Export backup</string>
+    <string name="backup_restore">Restore backup</string>
+    <string name="backup_drive">Back up to Google Drive</string>
+    <string name="backup_delete_all">Delete all local data</string>
+    <string name="menu_release_notes">Release notes</string>
+    <string name="menu_licenses">Open-source licenses</string>
+    <string name="menu_documents">Documents</string>
+    <string name="menu_settings">Settings</string>
+    <string name="menu_help">Help &amp; support</string>
+</resources>

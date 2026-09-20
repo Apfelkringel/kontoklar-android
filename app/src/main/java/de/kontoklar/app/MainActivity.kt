@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -30,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -79,13 +81,13 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Page(val title: String, val icon: ImageVector) {
-    Home("Übersicht", Icons.Default.Home),
-    Invoices("Rechnungen", Icons.Default.ReceiptLong),
-    Expenses("Ausgaben", Icons.Default.Payments),
-    Taxes("Steuern", Icons.Default.AccountBalance),
-    More("Mehr", Icons.Default.Menu),
-    Banking("Banking", Icons.Default.AccountBalanceWallet)
+private enum class Page {
+    Home,
+    Invoices,
+    Expenses,
+    Taxes,
+    More,
+    Banking
 }
 
 private data class Entry(val title: String, val subtitle: String, val amount: String, val icon: ImageVector, val tint: Color)
@@ -134,6 +136,14 @@ private fun KontoKlarApp() {
     var expenseToEdit by remember { mutableStateOf<Expense?>(null) }
     var expenseToDelete by remember { mutableStateOf<Expense?>(null) }
     var page by remember { mutableStateOf(Page.Home) }
+    val navOverview = stringResource(R.string.nav_overview)
+    val navInvoices = stringResource(R.string.nav_invoices)
+    val navExpenses = stringResource(R.string.nav_expenses)
+    val navTaxes = stringResource(R.string.nav_taxes)
+    val navMore = stringResource(R.string.nav_more)
+    val navBanking = stringResource(R.string.nav_banking)
+    val navTitles = mapOf(Page.Home to navOverview, Page.Invoices to navInvoices, Page.Expenses to navExpenses, Page.Taxes to navTaxes, Page.More to navMore, Page.Banking to navBanking)
+    val navIcons = mapOf(Page.Home to Icons.Default.Home, Page.Invoices to Icons.Default.ReceiptLong, Page.Expenses to Icons.Default.Payments, Page.Taxes to Icons.Default.AccountBalance, Page.More to Icons.Default.Menu, Page.Banking to Icons.Default.AccountBalanceWallet)
     var dialog by remember { mutableStateOf<String?>(null) }
     var toast by remember { mutableStateOf<String?>(null) }
     var customersOpen by remember { mutableStateOf(false) }
@@ -150,6 +160,9 @@ private fun KontoKlarApp() {
     var backupPasswordDialog by remember { mutableStateOf(false) }
     var backupPasswordForRestore by remember { mutableStateOf(false) }
     var backupPassword by remember { mutableStateOf("") }
+    val driveFolderUri = remember {
+        runCatching { Uri.parse(store.backupDriveFolder()) }.getOrNull()?.takeIf { it.toString().isNotBlank() }
+    }
     var customerEditorOpen by remember { mutableStateOf(false) }
     var editingCustomer by remember { mutableStateOf(Customer()) }
     var customerToDelete by remember { mutableStateOf<Customer?>(null) }
@@ -194,6 +207,28 @@ private fun KontoKlarApp() {
     }
     val backupImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->
         if (source != null) restoreBackupUri = source
+    }
+    val driveBackupExportLauncher = rememberLauncherForActivityResult(
+        object : ActivityResultContracts.CreateDocument("application/octet-stream") {
+            override fun createIntent(context: android.content.Context, input: String): Intent =
+                super.createIntent(context, input).apply {
+                    driveFolderUri?.let { folder ->
+                        runCatching { putExtra(DocumentsContract.EXTRA_INITIAL_URI, folder) }
+                    }
+                }
+        }
+    ) { destination ->
+        if (destination != null) scope.launch {
+            val password = backupPassword.toCharArray()
+            backupPassword = ""
+            runCatching { withContext(Dispatchers.IO) { exportBackup(context, destination, store, password) } }
+                .onSuccess {
+                    store.saveBackupDriveFolder(destination)
+                    toast = "Verschlüsselte Sicherung im Drive-Ordner gespeichert"
+                }
+                .onFailure { toast = it.message ?: "Sicherung konnte nicht erstellt werden." }
+                .also { password.fill('\u0000') }
+        } else backupPassword = ""
     }
     fun importBankStatement(source: Uri) {
         scope.launch {
@@ -365,8 +400,8 @@ private fun KontoKlarApp() {
                     NavigationBarItem(
                         selected = page == item || (page == Page.Banking && item == Page.More),
                         onClick = { page = item },
-                        icon = { Icon(item.icon, contentDescription = item.title) },
-                        label = { Text(item.title, fontSize = 10.sp) },
+                        icon = { Icon(navIcons[item] ?: Icons.Default.Home, contentDescription = navTitles[item] ?: "") },
+                        label = { Text(navTitles[item] ?: "", fontSize = 10.sp) },
                         colors = NavigationBarItemDefaults.colors(selectedIconColor = Forest, selectedTextColor = Forest, indicatorColor = Mint, unselectedIconColor = Muted)
                     )
                 }
@@ -381,7 +416,7 @@ private fun KontoKlarApp() {
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            Header(page.title, profile)
+            Header(navTitles[page] ?: "", profile)
             when (page) {
                 Page.Home -> Dashboard(
                     invoices, expenses, bankTransactions, bankAccounts, bankSecurities,
@@ -718,6 +753,12 @@ private fun KontoKlarApp() {
             onDismiss = { documentsOpen = false },
             onExport = { documentsOpen = false; backupPasswordForRestore = false; backupPassword = ""; backupPasswordDialog = true },
             onImport = { documentsOpen = false; backupImportLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream", "*/*")) },
+            onDriveExport = {
+                documentsOpen = false
+                backupPasswordForRestore = false
+                backupPassword = ""
+                driveBackupExportLauncher.launch("KontoKlar-Sicherung-" + LocalDate.now() + ".kkbackup")
+            },
             onDelete = { documentsOpen = false; deleteDataConfirmationOpen = true }
         )
         if (deleteDataConfirmationOpen) AlertDialog(
@@ -1485,14 +1526,38 @@ private fun SupportDialog(onDismiss: () -> Unit) {
 @Composable
 private fun MoreScreen(profile: BusinessProfile, onAction: (String) -> Unit) {
     var releaseHistoryOpen by remember { mutableStateOf(false) }
-    val links = listOf("Kontoauszüge & Abgleich" to Icons.Default.AccountBalanceWallet, "Kunden" to Icons.Default.People, "Angebote" to Icons.Default.RequestQuote, "Produkte & Dienstleistungen" to Icons.Default.Inventory2, "Wiederkehrende Rechnungen" to Icons.Default.Repeat, "Wiederkehrende Ausgaben" to Icons.Default.Repeat, "Dokumente" to Icons.Default.Folder, "Steuerübersicht" to Icons.Default.AutoAwesome, "Mit Buchhalter teilen" to Icons.Default.Share, "Einstellungen" to Icons.Default.Settings, "Versionshinweise" to Icons.Default.History, "Hilfe & Support" to Icons.Default.HelpOutline)
+    var licensesOpen by remember { mutableStateOf(false) }
+    val labelStatements = stringResource(R.string.action_statements)
+    val labelDocuments = stringResource(R.string.menu_documents)
+    val labelSettings = stringResource(R.string.menu_settings)
+    val labelReleaseNotes = stringResource(R.string.menu_release_notes)
+    val labelLicenses = stringResource(R.string.menu_licenses)
+    val labelHelp = stringResource(R.string.menu_help)
+    val links = listOf(
+        Triple(labelStatements, Icons.Default.AccountBalanceWallet, "Kontoauszüge & Abgleich"),
+        Triple("Kunden", Icons.Default.People, "Kunden"),
+        Triple("Angebote", Icons.Default.RequestQuote, "Angebote"),
+        Triple("Produkte & Dienstleistungen", Icons.Default.Inventory2, "Produkte & Dienstleistungen"),
+        Triple("Wiederkehrende Rechnungen", Icons.Default.Repeat, "Wiederkehrende Rechnungen"),
+        Triple("Wiederkehrende Ausgaben", Icons.Default.Repeat, "Wiederkehrende Ausgaben"),
+        Triple(labelDocuments, Icons.Default.Folder, "Dokumente"),
+        Triple("Steuerübersicht", Icons.Default.AutoAwesome, "Steuerübersicht"),
+        Triple("Mit Buchhalter teilen", Icons.Default.Share, "Mit Buchhalter teilen"),
+        Triple(labelSettings, Icons.Default.Settings, "Einstellungen"),
+        Triple(labelReleaseNotes, Icons.Default.History, "RELEASE_HISTORY"),
+        Triple(labelLicenses, Icons.Default.Description, "LICENSES"),
+        Triple(labelHelp, Icons.Default.HelpOutline, "Hilfe & Support")
+    )
     LazyColumn(contentPadding = PaddingValues(18.dp, 14.dp, 18.dp, 90.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(18.dp)) { Text(profile.businessName.ifBlank { profile.contactName }.ifBlank { "Unternehmensprofil" }, fontWeight = FontWeight.Bold, color = Ink, fontSize = 18.sp); Text(listOf(profile.activity, profile.legalForm, profile.street, listOf(profile.postalCode, profile.city).filter(String::isNotBlank).joinToString(" ")).filter(String::isNotBlank).joinToString(" · ").ifBlank { if (profile.businessName.isBlank() && profile.contactName.isBlank()) "Noch nicht eingerichtet · Daten bleiben lokal" else "Lokale Unternehmensdaten" }, color = Muted, fontSize = 13.sp) } } }
         item { AppUpdateCard() }
-        items(links) { (label, icon) -> Row(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(14.dp)).clickable { if (label == "Versionshinweise") releaseHistoryOpen = true else onAction(label) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(icon, null, tint = Forest); Spacer(Modifier.width(14.dp)); Text(label, color = Ink, modifier = Modifier.weight(1f)); Icon(Icons.Default.ChevronRight, null, tint = Muted) } }
+        items(links) { (label, icon, action) -> Row(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(14.dp)).clickable { when (action) { "RELEASE_HISTORY" -> releaseHistoryOpen = true; "LICENSES" -> licensesOpen = true; else -> onAction(action) } }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(icon, null, tint = Forest); Spacer(Modifier.width(14.dp)); Text(label, color = Ink, modifier = Modifier.weight(1f)); Icon(Icons.Default.ChevronRight, null, tint = Muted) } }
     }
     if (releaseHistoryOpen) {
         ReleaseHistoryScreen(onClose = { releaseHistoryOpen = false })
+    }
+    if (licensesOpen) {
+        LicenseScreen(onClose = { licensesOpen = false })
     }
 }
 
@@ -1540,13 +1605,89 @@ private fun ReleaseHistoryScreen(onClose: () -> Unit) {
                         }
                     }
                 }
+        }
+    }
+}
+}
+
+@Composable
+private fun LicenseScreen(onClose: () -> Unit) {
+    val labelTitle = stringResource(R.string.menu_licenses)
+    val actionClose = stringResource(R.string.action_close)
+    Column(Modifier.fillMaxSize().background(Mint).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Description, null, tint = Forest)
+            Spacer(Modifier.width(10.dp))
+            Text(labelTitle, color = Ink, fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.weight(1f))
+            TextButton(onClick = onClose) { Text(actionClose, color = Forest) }
+        }
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("KontoKlar", color = Ink, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text("Apache License 2.0", color = Muted, fontSize = 12.sp)
+                        Text("Copyright 2026 KontoKlar", color = Muted, fontSize = 11.sp)
+                    }
+                }
+            }
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Jetpack Compose · AndroidX · Material 3", color = Ink, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text("Apache License 2.0", color = Muted, fontSize = 12.sp)
+                    }
+                }
+            }
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("PDFBox-Android (com.tom-roush)", color = Ink, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text("Apache License 2.0", color = Muted, fontSize = 12.sp)
+                    }
+                }
+            }
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("ML Kit Text Recognition (Google)", color = Ink, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text("ML Kit Terms of Service", color = Muted, fontSize = 12.sp)
+                    }
+                }
+            }
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("kXML 2 (org.kxml2)", color = Ink, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text("MIT License / Public Domain", color = Muted, fontSize = 12.sp)
+                    }
+                }
+            }
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("JUnit (Tests)", color = Ink, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text("Eclipse Public License 1.0", color = Muted, fontSize = 12.sp)
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun DataManagementDialog(onDismiss: () -> Unit, onExport: () -> Unit, onImport: () -> Unit, onDelete: () -> Unit) {
+private fun DataManagementDialog(
+    onDismiss: () -> Unit,
+    onExport: () -> Unit,
+    onImport: () -> Unit,
+    onDriveExport: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val actionExport = stringResource(R.string.backup_export)
+    val actionRestore = stringResource(R.string.backup_restore)
+    val actionDriveBackup = stringResource(R.string.backup_drive)
+    val actionDeleteAll = stringResource(R.string.backup_delete_all)
+    val actionClose = stringResource(R.string.action_close)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Dokumente & Datensicherung", color = Ink, fontWeight = FontWeight.Bold) },
@@ -1554,18 +1695,21 @@ private fun DataManagementDialog(onDismiss: () -> Unit, onExport: () -> Unit, on
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Erstelle eine passwortgeschützte Sicherung mit Rechnungen und datierten Zahlungseingängen, Angeboten, wiederkehrenden Rechnungs- und Ausgabevorlagen, Kunden, Ausgaben, importierten Bankumsätzen, Profilangaben und Belegen. Die Verschlüsselung schützt die Datei auch außerhalb dieses Geräts. Bewahre das Passwort sicher auf – es kann nicht wiederhergestellt werden. Ältere unverschlüsselte ZIP-Sicherungen lassen sich weiterhin importieren.", color = Muted, fontSize = 13.sp)
                 Button(onClick = onExport, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Forest)) {
-                    Icon(Icons.Default.Backup, null); Spacer(Modifier.width(8.dp)); Text("Sicherung exportieren")
+                    Icon(Icons.Default.Backup, null); Spacer(Modifier.width(8.dp)); Text(actionExport)
+                }
+                OutlinedButton(onClick = onDriveExport, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.CloudUpload, null); Spacer(Modifier.width(8.dp)); Text(actionDriveBackup)
                 }
                 OutlinedButton(onClick = onImport, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.Restore, null); Spacer(Modifier.width(8.dp)); Text("Sicherung wiederherstellen")
+                    Icon(Icons.Default.Restore, null); Spacer(Modifier.width(8.dp)); Text(actionRestore)
                 }
                 OutlinedButton(onClick = onDelete, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
-                    Icon(Icons.Default.DeleteForever, null); Spacer(Modifier.width(8.dp)); Text("Alle lokalen Daten löschen")
+                    Icon(Icons.Default.DeleteForever, null); Spacer(Modifier.width(8.dp)); Text(actionDeleteAll)
                 }
                 Text("Eine Wiederherstellung ersetzt den aktuellen lokalen Datenbestand erst nach deiner Bestätigung.", color = Muted, fontSize = 11.sp)
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Schließen", color = Forest) } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(actionClose, color = Forest) } },
         containerColor = Color.White
     )
 }

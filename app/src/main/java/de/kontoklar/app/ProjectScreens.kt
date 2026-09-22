@@ -28,6 +28,7 @@ fun ProjectManagerDialog(
     expenses: List<Expense>,
     timeEntries: List<TimeEntry>,
     onSaveTimeEntry: (TimeEntry) -> Unit,
+    onDeleteTimeEntry: (TimeEntry) -> Unit,
     onDismiss: () -> Unit,
     onSave: (Project) -> Unit,
     onDelete: (Project) -> Unit
@@ -51,6 +52,7 @@ fun ProjectManagerDialog(
                         val revenue = projectInvoices.sumOf { it.amountCents }
                         val costs = projectExpenses.sumOf { it.amountCents }
                         val minutes = timeEntries.filter { it.projectId == project.id }.sumOf { it.minutes }
+                        val entries = timeEntries.filter { it.projectId == project.id }.sortedByDescending { it.date }
                         Row(Modifier.fillMaxWidth().background(Mint, RoundedCornerShape(12.dp)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Folder, null, tint = Forest)
                             Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
@@ -59,6 +61,12 @@ fun ProjectManagerDialog(
                                 Text(if (project.active) "Aktiv" else "Archiviert", color = Muted, fontSize = 11.sp)
                                 Text("Umsatz ${formatEuro(revenue)} · Kosten ${formatEuro(costs)} · Ergebnis ${formatEuro(revenue - costs)}", color = Forest, fontSize = 11.sp)
                                 Text("Arbeitszeit ${minutes / 60} h ${minutes % 60} min", color = Muted, fontSize = 11.sp)
+                                entries.take(3).forEach { entry ->
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("${entry.date} · ${entry.minutes} min${entry.note.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}", color = Muted, fontSize = 10.sp, modifier = Modifier.weight(1f))
+                                        IconButton(onClick = { onDeleteTimeEntry(entry) }, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.DeleteOutline, "Arbeitszeit löschen", tint = Muted, modifier = Modifier.size(16.dp)) }
+                                    }
+                                }
                             }
                             TextButton(onClick = { timeEditor = project }) { Text("Zeit", color = Forest, fontSize = 11.sp) }
                             IconButton(onClick = { editor = project }) { Icon(Icons.Default.Edit, "Bearbeiten", tint = Forest) }

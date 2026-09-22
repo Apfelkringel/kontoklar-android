@@ -678,6 +678,7 @@ private fun KontoKlarApp() {
             expenses = expenses,
             timeEntries = timeEntries,
             onSaveTimeEntry = { entry -> timeEntries = listOf(entry) + timeEntries; store.saveTimeEntries(timeEntries); toast = "Arbeitszeit gespeichert" },
+            onDeleteTimeEntry = { entry -> timeEntries = timeEntries.filterNot { it.id == entry.id }; store.saveTimeEntries(timeEntries); toast = "Arbeitszeit gelöscht" },
             onDismiss = { projectsOpen = false },
             onSave = { saved -> projects = projects.upsertProject(saved); store.saveProjects(projects); toast = "Projekt gespeichert" },
             onDelete = { project -> projects = projects.withoutProject(project.id); store.saveProjects(projects); toast = "Projekt gelöscht" }

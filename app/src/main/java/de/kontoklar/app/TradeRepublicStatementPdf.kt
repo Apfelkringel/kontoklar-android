@@ -16,7 +16,7 @@ import java.util.Locale
 private const val MAX_TRADE_REPUBLIC_PDF_BYTES = 60L * 1024 * 1024
 private const val MAX_TRADE_REPUBLIC_ROWS = 50_000
 private val statementDate = Regex("^\\s*(\\d{4}-\\d{2}-\\d{2}|\\d{1,2}[./]\\d{1,2}[./]\\d{4}|\\d{1,2}\\s+[A-Za-zÄÖÜäöü]{3,9}\\s+\\d{4})\\s+(.+?)\\s*$")
-private val statementAmount = Regex("(?<![\\w/])(?:EUR\\s*)?(?:€\\s*)?[+−-]?(?:\\d{1,3}(?:[ ,.'’]\\d{3})+|\\d+)(?:[,.]\\d{2})(?!\\d)", RegexOption.IGNORE_CASE)
+internal val statementAmount = Regex("(?<![\\w/])(?:EUR\\s*)?(?:€\\s*)?[+−-]?(?:\\d{1,3}(?:[ ,.'’]\\d{3})+|\\d+)(?:[,.]\\d{2})(?!\\d)", RegexOption.IGNORE_CASE)
 private val germanStatementDate = DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("d. MMMM uuuu").toFormatter(Locale.GERMAN)
 private val englishStatementDate = DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("d MMM uuuu").toFormatter(Locale.ENGLISH)
 private val c24TransactionStart = Regex("^\\s*(\\d{1,2})\\.(\\d{1,2})\\.\\s+\\d{1,2}\\.\\d{1,2}\\.\\s+(.+?)\\s+([+−-]?)\\s*((?:\\d{1,3}(?:[ .']\\d{3})+|\\d+)[,.]\\d{2})\\s*€?\\s*$")
@@ -32,8 +32,47 @@ fun parseBankStatementPdf(input: InputStream, context: Context): ParsedBankState
     return when {
         normalized.contains("trade republic") -> parseTradeRepublicStatementText(text)
         normalized.contains("c24 bank") && normalized.contains("transaktionsübersicht") -> parseC24StatementText(text)
-        else -> error("Das PDF ist kein unterstützter C24- oder Trade-Republic-Kontoauszug.")
+        normalized.contains("comdirect") && (normalized.contains("finanzreport") || normalized.contains("umsatz in eur")) -> parseComdirectStatementText(text)
+        else -> error("Das PDF ist kein unterstützter C24-, comdirect- oder Trade-Republic-Kontoauszug.")
     }
+}
+
+/** Parses comdirect Finanzreport rows only when the amount carries an explicit sign. */
+internal fun parseComdirectStatementText(text: String): ParsedBankStatement {
+    require(text.length <= MAX_TRADE_REPUBLIC_PDF_BYTES) { "Der extrahierte comdirect-Finanzreport ist zu groß." }
+    val normalized = text.lowercase(Locale.ROOT)
+    require(normalized.contains("comdirect") && (normalized.contains("finanzreport") || normalized.contains("umsatz in eur"))) {
+        "Das PDF ist kein erkennbarer comdirect-Finanzreport."
+    }
+    val iban = Regex("(?i)\\bIBAN:\\s*([A-Z]{2}\\d{2}(?:\\s?[A-Z0-9]){11,30})\\b")
+        .find(text)?.groupValues?.get(1)?.replace(" ", "").orEmpty()
+    val rows = mutableListOf<BankTransaction>()
+    val duplicateOrdinals = mutableMapOf<String, Int>()
+    text.lineSequence().forEach { rawLine ->
+        val line = rawLine.trim()
+        val dateMatch = Regex("^(\\d{1,2}\\.\\d{1,2}\\.\\d{4})\\s+(.+)$").matchEntire(line) ?: return@forEach
+        val date = parseStatementDate(dateMatch.groupValues[1]) ?: return@forEach
+        val rest = dateMatch.groupValues[2].trim()
+        val amountMatches = statementAmount.findAll(rest).toList()
+        if (amountMatches.size != 1 || amountMatches.single().range.last != rest.lastIndex) return@forEach
+        val amountToken = amountMatches.single().value
+        require(amountToken.contains('+') || amountToken.contains('-') || amountToken.contains('−')) {
+            "Eine comdirect-Buchung enthält kein eindeutiges Vorzeichen."
+        }
+        val amount = parseStatementMoney(amountToken)
+        require(amount != 0L) { "Eine comdirect-Buchung enthält keinen Betrag." }
+        val description = rest.substring(0, amountMatches.single().range.first).trim()
+        require(description.isNotBlank()) { "Eine comdirect-Buchung enthält keinen Buchungstext." }
+        val stableKey = listOf(iban, date, amount.toString(), description).joinToString("\\u001f")
+        val ordinal = duplicateOrdinals.getOrDefault(stableKey, 0)
+        duplicateOrdinals[stableKey] = ordinal + 1
+        val id = MessageDigest.getInstance("SHA-256").digest("$stableKey\\u001f$ordinal".toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(byte) }
+        rows += BankTransaction(id, iban, date, description.substringBefore(':').trim().ifBlank { description.take(120) }, description.take(800), amount, "")
+        require(rows.size <= MAX_TRADE_REPUBLIC_ROWS) { "Der comdirect-Finanzreport enthält mehr als $MAX_TRADE_REPUBLIC_ROWS Buchungen." }
+    }
+    require(rows.isNotEmpty()) { "Im comdirect-Finanzreport wurden keine sicher lesbaren Buchungen gefunden." }
+    return ParsedBankStatement(listOf(iban).filter(String::isNotBlank), rows)
 }
 
 fun parseTradeRepublicStatementPdf(input: InputStream, context: Context): ParsedBankStatement {
@@ -194,7 +233,7 @@ private fun parseStatementDate(value: String): String? {
     return null
 }
 
-private fun parseStatementMoney(value: String): Long {
+internal fun parseStatementMoney(value: String): Long {
     val cleaned = value.replace("EUR", "", ignoreCase = true).replace("€", "")
         .replace("−", "-").replace(Regex("[\\s\\u00a0\\u202f']"), "").trim()
     val sign = if (cleaned.startsWith('-')) -1 else 1

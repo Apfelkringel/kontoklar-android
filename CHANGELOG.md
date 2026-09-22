@@ -2,6 +2,13 @@
 
 Alle veröffentlichten Versionen werden signiert über GitHub Actions bereitgestellt; die App lädt Updates direkt aus dem öffentlichen GitHub-Release und verifiziert SHA-256, Paket-ID, Versionscode und Signaturzertifikat, bevor sie Android den Paketinstaller anzeigt.
 
+## v0.84.0 – 22.09.2026
+
+- Projektverwaltung mit Kundenbezug, Umsatz-/Kosten-/Ergebnisübersicht und Projektauswahl in Rechnungs- und Ausgabenerfassung.
+- Arbeitszeiterfassung pro Projekt mit Datum, Minuten, Stundensatz und Notiz; Einträge werden verschlüsselt gespeichert und gesichert.
+- Bankseite mit Schnellaktionen für C24, comdirect und Trade Republic sowie klarer Rückmeldung zur verfügbaren Anbieterabdeckung.
+- Version 93 / 0.84.0.
+
 ## v0.83.9 – 20.09.2026
 
 - Weitere kostenlose Bankimporte: CSV-Parser unterstützt jetzt auch DKB („Betrag (EUR)“), ING („Saldo nach Buchung“) und N26-Exporte neben C24 und comdirect.

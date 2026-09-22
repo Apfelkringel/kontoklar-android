@@ -18,7 +18,8 @@ data class AppRelease(val version: String, val apkUrl: String, val sha256: Strin
 data class ReleaseHistoryEntry(val version: String, val publishedAt: String, val notes: String, val apkUrl: String)
 
 suspend fun fetchReleaseHistory(limit: Int = 10): List<ReleaseHistoryEntry> = withContext(Dispatchers.IO) {
-    val connection = URL("https://api.github.com/repos/Apfelkringel/kontoklar-android/releases?per_page=$limit")
+    val safeLimit = limit.coerceIn(1, 20)
+    val connection = URL("https://api.github.com/repos/Apfelkringel/kontoklar-android/releases?per_page=$safeLimit")
         .openConnection() as HttpURLConnection
     try {
         connection.connectTimeout = 10_000

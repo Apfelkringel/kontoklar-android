@@ -20,6 +20,11 @@ Alle veröffentlichten Versionen werden signiert über GitHub Actions bereitgest
 - Direkte Import-Schaltflächen für C24, comdirect und Trade Republic im Bank-Dialog.
 - Version 95 / 0.84.2.
 
+## v0.84.3 – 22.09.2026
+
+- Versionsverlauf-Anfragen im Update-Bereich begrenzt, damit nur ein kleiner, kontrollierter GitHub-Datensatz geladen wird.
+- Version 96 / 0.84.3.
+
 ## v0.83.9 – 20.09.2026
 
 - Weitere kostenlose Bankimporte: CSV-Parser unterstützt jetzt auch DKB („Betrag (EUR)“), ING („Saldo nach Buchung“) und N26-Exporte neben C24 und comdirect.

@@ -167,6 +167,16 @@ data class Project(
     val active: Boolean = true
 )
 
+data class TimeEntry(
+    val id: String = UUID.randomUUID().toString(),
+    val projectId: String,
+    val date: String = LocalDate.now().toString(),
+    val minutes: Int,
+    val note: String = "",
+    val hourlyRateCents: Long? = null,
+    val billed: Boolean = false
+)
+
 fun List<Expense>.upsertExpense(expense: Expense): List<Expense> =
     if (any { it.id == expense.id }) map { if (it.id == expense.id) expense else it } else listOf(expense) + this
 
@@ -214,6 +224,7 @@ class LocalData(context: Context) {
         .put("recurringExpenses", storedArray("recurring_expenses"))
         .put("expensePayments", storedArray("expense_payments"))
         .put("projects", storedArray("projects"))
+        .put("timeEntries", storedArray("time_entries"))
 
     fun restoreSnapshot(snapshot: JSONObject) {
         require(snapshot.optInt("schemaVersion") == 1) { "Diese Sicherungsversion wird nicht unterstützt." }
@@ -231,6 +242,7 @@ class LocalData(context: Context) {
         val importedRecurringPlans = decodeArray(snapshot.optJSONArray("recurringInvoices") ?: JSONArray(), ::recurringInvoicePlanFromJson)
         val importedRecurringExpenses = decodeArray(snapshot.optJSONArray("recurringExpenses") ?: JSONArray(), ::recurringExpensePlanFromJson)
         val importedProjects = decodeArray(snapshot.optJSONArray("projects") ?: JSONArray(), ::projectFromJson)
+        val importedTimeEntries = decodeArray(snapshot.optJSONArray("timeEntries") ?: JSONArray(), ::timeEntryFromJson)
         val importedProfile = businessProfileFromJson(snapshot.getJSONObject("businessProfile"))
         require(importedInvoices.all { it.amountCents > 0 && it.customer.isNotBlank() && it.description.isNotBlank() && it.paidCents in 0..it.amountCents }) { "Die Sicherung enthält ungültige Rechnungen oder Zahlungsstände." }
         require(importedInvoices.all { it.vatRatePercent == null || it.vatRatePercent in 0..27 }) { "Die Sicherung enthält einen ungültigen Umsatzsteuersatz für eine Rechnung." }
@@ -257,6 +269,8 @@ class LocalData(context: Context) {
         }) { "Die Sicherung enthält ungültige wiederkehrende Ausgaben." }
         require(importedProjects.all { it.id.isNotBlank() && it.name.isNotBlank() && it.name.length <= 200 && it.description.length <= 2000 }) { "Die Sicherung enthält ungültige Projekte." }
         require(importedProjects.map { it.id }.distinct().size == importedProjects.size) { "Die Sicherung enthält doppelte Projekte." }
+        require(importedTimeEntries.all { it.id.isNotBlank() && it.projectId in importedProjects.map(Project::id).toSet() && it.minutes in 1..1440 && validIsoDate(it.date) && (it.hourlyRateCents == null || it.hourlyRateCents >= 0) && it.note.length <= 2000 }) { "Die Sicherung enthält ungültige Arbeitszeiten." }
+        require(importedTimeEntries.map { it.id }.distinct().size == importedTimeEntries.size) { "Die Sicherung enthält doppelte Arbeitszeiten." }
         require(importedInvoices.map { it.id }.distinct().size == importedInvoices.size && importedInvoices.all { validIsoDate(it.date) && validIsoDate(it.serviceDate) && validIsoDate(it.dueDate) }) { "Die Sicherung enthält doppelte Rechnungen oder ungültige Rechnungsdaten." }
         require(importedOffers.map { it.id }.distinct().size == importedOffers.size && importedOffers.all { validIsoDate(it.date) && validIsoDate(it.validUntil) }) { "Die Sicherung enthält doppelte Angebote oder ungültige Angebotsdaten." }
         require(importedExpenses.map { it.id }.distinct().size == importedExpenses.size && importedExpenses.all { validIsoDate(it.date) }) { "Die Sicherung enthält doppelte Ausgaben oder ungültige Ausgabedaten." }
@@ -316,6 +330,7 @@ class LocalData(context: Context) {
             "recurring_invoices" to (snapshot.optJSONArray("recurringInvoices") ?: JSONArray()).toString(),
             "recurring_expenses" to (snapshot.optJSONArray("recurringExpenses") ?: JSONArray()).toString(),
             "projects" to (snapshot.optJSONArray("projects") ?: JSONArray()).toString(),
+            "time_entries" to (snapshot.optJSONArray("timeEntries") ?: JSONArray()).toString(),
             "business_profile" to businessProfileJson(importedProfile).toString()
         ))) { "Die wiederhergestellten Daten konnten nicht dauerhaft gespeichert werden." }
     }
@@ -370,6 +385,18 @@ class LocalData(context: Context) {
     private fun projectToJson(project: Project) = JSONObject()
         .put("id", project.id).put("name", project.name).put("description", project.description)
         .put("customerId", project.customerId).put("active", project.active)
+
+    private fun timeEntryFromJson(it: JSONObject) = TimeEntry(
+        id = it.optString("id", UUID.randomUUID().toString()), projectId = it.optString("projectId"),
+        date = it.optString("date"), minutes = it.optInt("minutes"), note = it.optString("note"),
+        hourlyRateCents = it.takeUnless { json -> json.isNull("hourlyRateCents") }?.optLong("hourlyRateCents"),
+        billed = it.optBoolean("billed", false)
+    )
+
+    private fun timeEntryToJson(entry: TimeEntry) = JSONObject()
+        .put("id", entry.id).put("projectId", entry.projectId).put("date", entry.date)
+        .put("minutes", entry.minutes).put("note", entry.note)
+        .put("hourlyRateCents", entry.hourlyRateCents ?: JSONObject.NULL).put("billed", entry.billed)
 
     private fun bankTransactionFromJson(it: JSONObject) = BankTransaction(
         id = it.optString("id"), accountIban = it.optString("accountIban"), date = it.optString("date"),
@@ -494,6 +521,7 @@ class LocalData(context: Context) {
 
     fun expenses(): List<Expense> = read("expenses", ::expenseFromJson)
     fun projects(): List<Project> = read("projects", ::projectFromJson)
+    fun timeEntries(): List<TimeEntry> = read("time_entries", ::timeEntryFromJson)
     fun expensePayments(): List<ExpensePayment> = read("expense_payments", ::expensePaymentFromJson)
     fun bankTransactions(): List<BankTransaction> = read("bank_transactions", ::bankTransactionFromJson)
     fun bankAccounts(): List<BankAccountSummary> = read("bank_accounts", ::bankAccountFromJson)
@@ -504,6 +532,7 @@ class LocalData(context: Context) {
     fun saveOffers(values: List<Offer>) = write("offers", values.map { JSONObject().put("id", it.id).put("number", it.number).put("customer", it.customer).put("customerId", it.customerId).put("customerAddress", it.customerAddress).put("customerEmail", it.customerEmail).put("description", it.description).put("amountCents", it.amountCents).put("date", it.date).put("validUntil", it.validUntil).put("status", it.status).put("convertedInvoiceId", it.convertedInvoiceId).put("lines", JSONArray().apply { it.lines.forEach { line -> put(JSONObject().put("description", line.description).put("amountCents", line.amountCents)) } }) })
     fun saveExpenses(values: List<Expense>) = write("expenses", values.map(::expenseToJson))
     fun saveProjects(values: List<Project>) = write("projects", values.map(::projectToJson))
+    fun saveTimeEntries(values: List<TimeEntry>) = write("time_entries", values.map(::timeEntryToJson))
     fun saveExpensePayments(values: List<ExpensePayment>) = write("expense_payments", values.map(::expensePaymentToJson))
     fun saveBankTransactions(values: List<BankTransaction>) = write("bank_transactions", values.map(::bankTransactionToJson))
     fun saveBankAccounts(values: List<BankAccountSummary>) = write("bank_accounts", values.map(::bankAccountToJson))

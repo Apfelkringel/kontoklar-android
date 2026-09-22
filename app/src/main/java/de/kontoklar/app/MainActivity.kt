@@ -126,6 +126,7 @@ private fun KontoKlarApp() {
     var offers by remember { mutableStateOf(store.offers()) }
     var products by remember { mutableStateOf(store.products()) }
     var projects by remember { mutableStateOf(store.projects()) }
+    var timeEntries by remember { mutableStateOf(store.timeEntries()) }
     var taxDeadlines by remember { mutableStateOf(store.taxDeadlines()) }
     var recurringPlans by remember { mutableStateOf(store.recurringInvoicePlans()) }
     var recurringExpensePlans by remember { mutableStateOf(store.recurringExpensePlans()) }
@@ -673,6 +674,10 @@ private fun KontoKlarApp() {
         if (projectsOpen) ProjectManagerDialog(
             projects = projects,
             customers = customers,
+            invoices = invoices,
+            expenses = expenses,
+            timeEntries = timeEntries,
+            onSaveTimeEntry = { entry -> timeEntries = listOf(entry) + timeEntries; store.saveTimeEntries(timeEntries); toast = "Arbeitszeit gespeichert" },
             onDismiss = { projectsOpen = false },
             onSave = { saved -> projects = projects.upsertProject(saved); store.saveProjects(projects); toast = "Projekt gespeichert" },
             onDelete = { project -> projects = projects.withoutProject(project.id); store.saveProjects(projects); toast = "Projekt gelöscht" }

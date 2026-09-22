@@ -970,6 +970,22 @@ private fun KontoKlarApp() {
                 },
                 onSharePdf = { runCatching { shareInvoicePdf(context, invoice, profile) }.onFailure { toast = "PDF konnte nicht erstellt werden: ${it.message}" } },
                 onEdit = { invoiceToEdit = invoice; selectedInvoice = null; dialog = "Rechnung bearbeiten" },
+                onDuplicate = {
+                    val today = LocalDate.now()
+                    val copy = invoice.copy(
+                        id = java.util.UUID.randomUUID().toString(),
+                        number = store.nextInvoiceNumber(),
+                        date = today.toString(),
+                        serviceDate = today.toString(),
+                        dueDate = today.plusDays(profile.paymentTermsDays.coerceIn(1, 90).toLong()).toString(),
+                        status = "Entwurf",
+                        paidCents = 0L
+                    )
+                    invoices = invoices.upsertInvoice(copy)
+                    store.saveInvoices(invoices)
+                    selectedInvoice = null
+                    toast = "Rechnung ${copy.number} als Entwurf dupliziert"
+                },
                 onDelete = { invoiceToDelete = invoice; selectedInvoice = null },
                 onRegisterPayment = { cents ->
                     runCatching { store.recordInvoicePayment(invoice.id, cents) }
@@ -1921,6 +1937,7 @@ private fun InvoiceDetailsDialog(
     onExportXml: () -> Unit,
     onSharePdf: () -> Unit,
     onEdit: () -> Unit,
+    onDuplicate: () -> Unit,
     onDelete: () -> Unit,
     onRegisterPayment: (Long) -> Unit,
     onPaymentReminder: () -> Unit,
@@ -1967,6 +1984,9 @@ private fun InvoiceDetailsDialog(
                 Text(if (xmlErrors.isEmpty()) "${invoiceLines(invoice).size} Position(en) · deutsches Inland · Regelsteuersatz" else "Voraussetzungen: ${xmlErrors.joinToString(" ")}", color = Muted, fontSize = 11.sp)
                 OutlinedButton(onClick = onSharePdf, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.PictureAsPdf, null); Spacer(Modifier.width(8.dp)); Text(if (invoice.status == "Entwurf") "Entwurfs-PDF teilen" else "Finale Rechnung als PDF teilen")
+                }
+                OutlinedButton(onClick = onDuplicate, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.ContentCopy, null); Spacer(Modifier.width(8.dp)); Text("Als neuen Entwurf duplizieren")
                 }
                 if (invoice.status == "Entwurf") {
                     OutlinedButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) {

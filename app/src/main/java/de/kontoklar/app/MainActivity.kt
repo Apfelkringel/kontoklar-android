@@ -1043,6 +1043,17 @@ private fun KontoKlarApp() {
                 payments = expensePayments.filter { it.expenseId == expense.id },
                 onDismiss = { selectedExpense = null },
                 onEdit = { expenseToEdit = expense; selectedExpense = null; dialog = "Ausgabe bearbeiten" },
+                onDuplicate = {
+                    val copy = expense.copy(
+                        id = java.util.UUID.randomUUID().toString(),
+                        date = LocalDate.now().toString(),
+                        receiptUri = null
+                    )
+                    expenses = expenses.upsertExpense(copy)
+                    store.saveExpenses(expenses)
+                    selectedExpense = null
+                    toast = "Ausgabe als neuer Eintrag dupliziert"
+                },
                 onDelete = { expenseToDelete = expense; selectedExpense = null },
                 onRegisterPayment = { amountCents, date ->
                     runCatching { store.recordExpensePayment(expense.id, amountCents, date) }
@@ -2027,6 +2038,7 @@ private fun ExpenseDetailsDialog(
     payments: List<ExpensePayment>,
     onDismiss: () -> Unit,
     onEdit: () -> Unit,
+    onDuplicate: () -> Unit,
     onDelete: () -> Unit,
     onRegisterPayment: (Long, LocalDate) -> Unit,
     onDeletePayment: (String) -> Unit,
@@ -2107,6 +2119,9 @@ private fun ExpenseDetailsDialog(
                 } else Text("Zu dieser Ausgabe ist kein Beleg angehängt.", color = Muted, fontSize = 12.sp)
                 OutlinedButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Edit, null); Spacer(Modifier.width(8.dp)); Text("Ausgabe bearbeiten")
+                }
+                OutlinedButton(onClick = onDuplicate, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.ContentCopy, null); Spacer(Modifier.width(8.dp)); Text("Als neuen Eintrag duplizieren")
                 }
                 TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.colorScheme.error); Spacer(Modifier.width(8.dp)); Text("Ausgabe löschen", color = MaterialTheme.colorScheme.error)

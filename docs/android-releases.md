@@ -18,7 +18,7 @@ Der private PKCS#12-Keystore liegt lokal unter `signing/kontoklar-release.p12` a
 
 Aktueller Release-Zertifikat-Fingerprint (SHA-256): `5F:7E:4A:B0:E8:07:51:A5:E9:2D:CE:96:78:E7:69:AB:9E:5F:A0:89:18:E6:E2:4B:C0:1D:95:56:BF:75:67:3F`. Das ist der öffentliche Zertifikatsfingerprint, nicht das private Schlüsselmaterial.
 
-Der Tag-Workflow testet die App, erstellt ein signiertes Release-APK, erzeugt zusätzlich eine `.sha256`-Prüfsummendatei und veröffentlicht beide als GitHub-Release-Assets. Der aktuelle Quellstand ist `versionCode 97` / `versionName 0.84.4`. Tags müssen einmalig und aufsteigend sein; Android akzeptiert keine gleich alte oder niedrigere `versionCode`.
+Der Tag-Workflow testet die App, erstellt ein signiertes Release-APK, erzeugt zusätzlich eine `.sha256`-Prüfsummendatei und veröffentlicht beide als GitHub-Release-Assets. Der aktuelle Quellstand ist `versionCode 98` / `versionName 0.84.5`. Tags müssen einmalig und aufsteigend sein; Android akzeptiert keine gleich alte oder niedrigere `versionCode`.
 
 Die nicht geheime Repository-Variable `KONTOKLAR_BANKING_API_BASE_URL` wird in den Release-Build übernommen. Solange kein produktionsfreigegebener Open-Banking-Worker existiert, darf sie leer bleiben; Live-Banking ist dann in der App deaktiviert. Die Variable enthält ausschließlich die HTTPS-Adresse, keine finAPI-Credentials.
 

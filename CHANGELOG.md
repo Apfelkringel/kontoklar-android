@@ -30,6 +30,12 @@ Alle veröffentlichten Versionen werden signiert über GitHub Actions bereitgest
 - Projekte und Zeiterfassungen werden jetzt im Buchhaltungs- und Steuerberater-CSV-Export mitgeführt.
 - Version 97 / 0.84.4.
 
+## v0.84.5 – 22.09.2026
+
+- Rechnungen können aus dem Detaildialog als neue Entwürfe dupliziert werden.
+- Neue Rechnungsnummer und Fälligkeit werden automatisch vergeben; Zahlungen werden nicht übernommen.
+- Version 98 / 0.84.5.
+
 ## v0.83.9 – 20.09.2026
 
 - Weitere kostenlose Bankimporte: CSV-Parser unterstützt jetzt auch DKB („Betrag (EUR)“), ING („Saldo nach Buchung“) und N26-Exporte neben C24 und comdirect.

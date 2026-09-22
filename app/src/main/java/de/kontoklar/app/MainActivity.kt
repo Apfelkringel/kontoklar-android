@@ -441,7 +441,7 @@ private fun KontoKlarApp() {
                     toast = "Fristenliste aktualisiert"
                 }, onAction = { action ->
                     when (action) {
-                        "Steuerberater teilen" -> runCatching { shareBookkeepingCsv(context, invoices, expenses, bankTransactions, invoicePayments, expensePayments) }
+                        "Steuerberater teilen" -> runCatching { shareBookkeepingCsv(context, invoices, expenses, bankTransactions, invoicePayments, expensePayments, projects, timeEntries) }
                             .onFailure { toast = it.message ?: "Export konnte nicht erstellt werden." }
                         "Steuerprofil" -> dialog = "Unternehmensprofil"
                         else -> dialog = action
@@ -459,7 +459,7 @@ private fun KontoKlarApp() {
                     else if (action == "Wiederkehrende Rechnungen") recurringInvoicesOpen = true
                     else if (action == "Wiederkehrende Ausgaben") recurringExpensesOpen = true
                     else if (action == "Dokumente") documentsOpen = true
-                    else if (action == "Mit Buchhalter teilen") runCatching { shareBookkeepingCsv(context, invoices, expenses, bankTransactions, invoicePayments, expensePayments) }
+                    else if (action == "Mit Buchhalter teilen") runCatching { shareBookkeepingCsv(context, invoices, expenses, bankTransactions, invoicePayments, expensePayments, projects, timeEntries) }
                         .onFailure { toast = it.message ?: "Export konnte nicht erstellt werden." }
                     else toast = "$action – wird eingerichtet"
                 })

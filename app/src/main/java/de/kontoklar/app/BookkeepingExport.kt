@@ -13,7 +13,9 @@ fun shareBookkeepingCsv(
     expenses: List<Expense>,
     bankTransactions: List<BankTransaction> = emptyList(),
     invoicePayments: List<InvoicePayment> = emptyList(),
-    expensePayments: List<ExpensePayment> = emptyList()
+    expensePayments: List<ExpensePayment> = emptyList(),
+    projects: List<Project> = emptyList(),
+    timeEntries: List<TimeEntry> = emptyList()
 ) {
     val directory = File(context.cacheDir, "exports").apply { check(isDirectory || mkdirs()) { "Exportordner ist nicht verfügbar." } }
     val file = File(directory, "KontoKlar-Buchungen-${LocalDate.now()}.csv")
@@ -38,6 +40,14 @@ fun shareBookkeepingCsv(
             val expense = expensesById[payment.expenseId] ?: return@forEach
             writer.appendLine(expensePaymentCsvFields(payment, expense, payment.bankTransactionId?.let(transactionsById::get))
                 .joinToString(";") { csvField(it) })
+        }
+        projects.sortedBy(Project::name).forEach { project ->
+            writer.appendLine(projectCsvFields(project).joinToString(";") { csvField(it) })
+        }
+        val projectsById = projects.associateBy(Project::id)
+        timeEntries.sortedBy(TimeEntry::date).forEach { entry ->
+            val project = projectsById[entry.projectId] ?: return@forEach
+            writer.appendLine(timeEntryCsvFields(entry, project).joinToString(";") { csvField(it) })
         }
         bankTransactions.sortedBy(BankTransaction::date).forEach { transaction ->
             val accountHint = transaction.accountIban.takeLast(4).takeIf(String::isNotBlank)?.let { "Konto ••••$it" }.orEmpty()
@@ -88,6 +98,21 @@ internal fun expensePaymentCsvFields(payment: ExpensePayment, expense: Expense, 
     payment.date, "", centsAsGermanDecimal(payment.amountCents), payment.source,
     "Ausgabe ${expense.id}${transaction?.description?.takeIf(String::isNotBlank)?.let { " · $it" }.orEmpty()}", "", ""
 )
+
+internal fun projectCsvFields(project: Project): List<String> = listOf(
+    "Projekt", "", project.name, project.description, "", "", "", if (project.active) "Aktiv" else "Archiviert",
+    project.customerId?.let { "Kunden-ID $it" }.orEmpty(), "", ""
+)
+
+internal fun timeEntryCsvFields(entry: TimeEntry, project: Project): List<String> {
+    val hourlyRateCents = entry.hourlyRateCents ?: 0L
+    val costCents = (entry.minutes.toLong() * hourlyRateCents) / 60L
+    return listOf(
+        "Zeiterfassung", "", project.name, entry.note, entry.date, "", centsAsGermanDecimal(costCents),
+        if (entry.billed) "Abgerechnet" else "Nicht abgerechnet",
+        "${entry.minutes} Minuten · ${centsAsGermanDecimal(hourlyRateCents)}/Std.", "", ""
+    )
+}
 
 internal fun csvField(value: String): String {
     val safe = if (value.trimStart().firstOrNull() in setOf('=', '+', '-', '@')) "'$value" else value

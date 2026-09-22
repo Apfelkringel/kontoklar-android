@@ -47,4 +47,15 @@ class BookkeepingExportTest {
         assertEquals("", row[9])
         assertEquals("", row[10])
     }
+    @Test fun projectAndTimeEntryRowsAreExportable() {
+        val project = Project(id = "project-1", name = "Website", description = "Neuer Auftritt", customerId = "customer-1")
+        val entry = TimeEntry(projectId = project.id, date = "2026-09-20", minutes = 90, note = "Implementierung", hourlyRateCents = 8_000, billed = false)
+
+        assertEquals(listOf("Projekt", "", "Website", "Neuer Auftritt", "", "", "", "Aktiv", "Kunden-ID customer-1", "", ""), projectCsvFields(project))
+        val row = timeEntryCsvFields(entry, project)
+        assertEquals("Zeiterfassung", row[0])
+        assertEquals("Website", row[2])
+        assertEquals("120,00", row[6])
+        assertEquals("Nicht abgerechnet", row[7])
+    }
 }

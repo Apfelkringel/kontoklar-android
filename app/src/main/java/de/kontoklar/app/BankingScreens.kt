@@ -120,12 +120,15 @@ fun BankingScreen(
                     Text("Die Dateien werden nur auf deinem Gerät verarbeitet. KontoKlar fragt keine Bank-PIN ab.", color = Muted, fontSize = 12.sp)
                     Text("C24", color = Ink, fontWeight = FontWeight.Bold)
                     Text("Im C24-Webbanking CSV, Excel oder Kontoauszug-PDF exportieren und anschließend hier importieren.", color = Muted, fontSize = 11.sp)
+                    OutlinedButton(onClick = { communityGuideOpen = false; onImportStatement() }) { Text("C24-Datei auswählen") }
                     TextButton(onClick = { onOpenCommunityUrl("https://hilfe.c24.de/hc/de/articles/360017014279-Wie-ist-PSD2-bei-der-C24-Bank-umgesetzt") }) { Text("C24-Hinweise öffnen") }
                     Text("comdirect", color = Ink, fontWeight = FontWeight.Bold)
                     Text("CSV-Export direkt importieren. Für das kostenlose eigene API-Konto Clientdaten bei comdirect registrieren; PIN und Client-Secret gehören niemals in KontoKlar.", color = Muted, fontSize = 11.sp)
+                    OutlinedButton(onClick = { communityGuideOpen = false; onImportStatement() }) { Text("comdirect-Datei auswählen") }
                     TextButton(onClick = onOpenComdirectApi) { Text("comdirect API öffnen") }
                     Text("Trade Republic", color = Ink, fontWeight = FontWeight.Bold)
                     Text("Zuerst den offiziellen Transaktions-CSV-Export oder Kontoauszug-PDF aus Trade Republic verwenden. Falls der Export bei deinem Konto noch fehlt, kann außerhalb der App das kostenlose pytr-Tool eine CSV erzeugen.", color = Muted, fontSize = 11.sp)
+                    OutlinedButton(onClick = { communityGuideOpen = false; onImportStatement() }) { Text("Trade-Republic-Datei auswählen") }
                     TextButton(onClick = { onOpenCommunityUrl("https://support.traderepublic.com/de-de/267") }) { Text("Offizielle TR-Anleitung öffnen") }
                     TextButton(onClick = { onOpenCommunityUrl("https://github.com/pytr-org/pytr") }) { Text("pytr auf GitHub öffnen") }
                 }

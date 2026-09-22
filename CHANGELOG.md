@@ -9,6 +9,12 @@ Alle veröffentlichten Versionen werden signiert über GitHub Actions bereitgest
 - Bankseite mit Schnellaktionen für C24, comdirect und Trade Republic sowie klarer Rückmeldung zur verfügbaren Anbieterabdeckung.
 - Version 93 / 0.84.0.
 
+## v0.84.1 – 22.09.2026
+
+- Stabilerer GitHub-Release-Prozess für Updates.
+- APK wird zusammen mit einer SHA-256-Prüfsummendatei veröffentlicht.
+- Version 94 / 0.84.1.
+
 ## v0.83.9 – 20.09.2026
 
 - Weitere kostenlose Bankimporte: CSV-Parser unterstützt jetzt auch DKB („Betrag (EUR)“), ING („Saldo nach Buchung“) und N26-Exporte neben C24 und comdirect.

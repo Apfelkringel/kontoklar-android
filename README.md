@@ -58,7 +58,7 @@ Native Android app prototype built with Kotlin and Jetpack Compose. The app uses
 
 ## Kostenloser Betrieb
 
-KontoKlar ist dauerhaft ohne Abo nutzbar, wenn Kontoauszüge lokal importiert werden. Unterstützt werden CAMT.053, MT940/Swift, C24-/comdirect-CSV, C24-Excel (.xlsx), C24-Kontoauszüge als PDF, Trade-Republic-Kontoauszüge als PDF sowie der native Trade-Republic-Transaktionsexport mit lokalen Depotpositionen; die Verarbeitung erfolgt auf dem Android-Gerät und benötigt keine Bank-Zugangsdaten. Die automatische Live-Synchronisierung über einen Open-Banking-Aggregator ist optional und kann Anbieter-/Lizenzkosten verursachen. Es gibt keine versteckte Umstellung auf einen kostenpflichtigen Dienst.
+KontoKlar ist dauerhaft ohne Abo nutzbar, wenn Kontoauszüge lokal importiert werden. Unterstützt werden CAMT.053, MT940/Swift, C24-/comdirect-CSV, C24-Excel (.xlsx), C24- und comdirect-Finanzreport-PDFs, Trade-Republic-Kontoauszüge als PDF sowie der native Trade-Republic-Transaktionsexport mit lokalen Depotpositionen; die Verarbeitung erfolgt auf dem Android-Gerät und benötigt keine Bank-Zugangsdaten. Die automatische Live-Synchronisierung über einen Open-Banking-Aggregator ist optional und kann Anbieter-/Lizenzkosten verursachen. Es gibt keine versteckte Umstellung auf einen kostenpflichtigen Dienst.
 
 Für Trade Republic kann kostenlos außerhalb der App [pytr](https://github.com/pytr-org/pytr) genutzt werden: `uvx pytr@latest login` und anschließend `uvx pytr@latest export_transactions`. Die erzeugte `account_transactions.csv` wird danach in KontoKlar lokal importiert; Zugangsdaten, Freigabecodes und Cookies bleiben außerhalb der App.
 

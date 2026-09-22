@@ -36,6 +36,12 @@ Alle veröffentlichten Versionen werden signiert über GitHub Actions bereitgest
 - Neue Rechnungsnummer und Fälligkeit werden automatisch vergeben; Zahlungen werden nicht übernommen.
 - Version 98 / 0.84.5.
 
+## v0.84.6 – 22.09.2026
+
+- Ausgaben können als neue lokale Einträge dupliziert werden.
+- Zahlungen und der Originalbeleg werden dabei nicht übernommen oder verändert.
+- Version 99 / 0.84.6.
+
 ## v0.83.9 – 20.09.2026
 
 - Weitere kostenlose Bankimporte: CSV-Parser unterstützt jetzt auch DKB („Betrag (EUR)“), ING („Saldo nach Buchung“) und N26-Exporte neben C24 und comdirect.

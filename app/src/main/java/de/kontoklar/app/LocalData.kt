@@ -22,7 +22,8 @@ data class Invoice(
     val status: String = "Entwurf",
     val vatRatePercent: Int? = null,
     val lines: List<InvoiceLine> = emptyList(),
-    val paidCents: Long = 0L
+    val paidCents: Long = 0L,
+    val projectId: String? = null
 )
 
 fun invoiceOutstandingCents(invoice: Invoice): Long = if (invoice.status == "Bezahlt") 0L else (invoice.amountCents - invoice.paidCents.coerceAtLeast(0)).coerceAtLeast(0)
@@ -154,7 +155,16 @@ data class Expense(
     val date: String = LocalDate.now().toString(),
     val note: String = "",
     val receiptUri: String? = null,
-    val inputVatCents: Long? = null
+    val inputVatCents: Long? = null,
+    val projectId: String? = null
+)
+
+data class Project(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val description: String = "",
+    val customerId: String? = null,
+    val active: Boolean = true
 )
 
 fun List<Expense>.upsertExpense(expense: Expense): List<Expense> =
@@ -171,6 +181,11 @@ fun List<Product>.upsertProduct(product: Product): List<Product> =
     if (any { it.id == product.id }) map { if (it.id == product.id) product else it } else listOf(product) + this
 
 fun List<Product>.withoutProduct(id: String): List<Product> = filterNot { it.id == id }
+
+fun List<Project>.upsertProject(project: Project): List<Project> =
+    if (any { it.id == project.id }) map { if (it.id == project.id) project else it } else listOf(project) + this
+
+fun List<Project>.withoutProject(id: String): List<Project> = filterNot { it.id == id }
 
 class LocalData(context: Context) {
     private val prefs = SecureLocalPreferences(context)
@@ -198,6 +213,7 @@ class LocalData(context: Context) {
         .put("recurringInvoices", storedArray("recurring_invoices"))
         .put("recurringExpenses", storedArray("recurring_expenses"))
         .put("expensePayments", storedArray("expense_payments"))
+        .put("projects", storedArray("projects"))
 
     fun restoreSnapshot(snapshot: JSONObject) {
         require(snapshot.optInt("schemaVersion") == 1) { "Diese Sicherungsversion wird nicht unterstützt." }
@@ -214,6 +230,7 @@ class LocalData(context: Context) {
         val importedTaxDeadlines = decodeArray(snapshot.optJSONArray("taxDeadlines") ?: JSONArray(), ::taxDeadlineFromJson)
         val importedRecurringPlans = decodeArray(snapshot.optJSONArray("recurringInvoices") ?: JSONArray(), ::recurringInvoicePlanFromJson)
         val importedRecurringExpenses = decodeArray(snapshot.optJSONArray("recurringExpenses") ?: JSONArray(), ::recurringExpensePlanFromJson)
+        val importedProjects = decodeArray(snapshot.optJSONArray("projects") ?: JSONArray(), ::projectFromJson)
         val importedProfile = businessProfileFromJson(snapshot.getJSONObject("businessProfile"))
         require(importedInvoices.all { it.amountCents > 0 && it.customer.isNotBlank() && it.description.isNotBlank() && it.paidCents in 0..it.amountCents }) { "Die Sicherung enthält ungültige Rechnungen oder Zahlungsstände." }
         require(importedInvoices.all { it.vatRatePercent == null || it.vatRatePercent in 0..27 }) { "Die Sicherung enthält einen ungültigen Umsatzsteuersatz für eine Rechnung." }
@@ -238,6 +255,8 @@ class LocalData(context: Context) {
                 plan.amountCents > 0 && (plan.inputVatCents == null || plan.inputVatCents in 0..plan.amountCents) &&
                 plan.intervalMonths in setOf(1, 3, 12) && plan.anchorDay in 1..31 && validIsoDate(plan.nextRunDate)
         }) { "Die Sicherung enthält ungültige wiederkehrende Ausgaben." }
+        require(importedProjects.all { it.id.isNotBlank() && it.name.isNotBlank() && it.name.length <= 200 && it.description.length <= 2000 }) { "Die Sicherung enthält ungültige Projekte." }
+        require(importedProjects.map { it.id }.distinct().size == importedProjects.size) { "Die Sicherung enthält doppelte Projekte." }
         require(importedInvoices.map { it.id }.distinct().size == importedInvoices.size && importedInvoices.all { validIsoDate(it.date) && validIsoDate(it.serviceDate) && validIsoDate(it.dueDate) }) { "Die Sicherung enthält doppelte Rechnungen oder ungültige Rechnungsdaten." }
         require(importedOffers.map { it.id }.distinct().size == importedOffers.size && importedOffers.all { validIsoDate(it.date) && validIsoDate(it.validUntil) }) { "Die Sicherung enthält doppelte Angebote oder ungültige Angebotsdaten." }
         require(importedExpenses.map { it.id }.distinct().size == importedExpenses.size && importedExpenses.all { validIsoDate(it.date) }) { "Die Sicherung enthält doppelte Ausgaben oder ungültige Ausgabedaten." }
@@ -296,6 +315,7 @@ class LocalData(context: Context) {
             "tax_deadlines" to (snapshot.optJSONArray("taxDeadlines") ?: JSONArray()).toString(),
             "recurring_invoices" to (snapshot.optJSONArray("recurringInvoices") ?: JSONArray()).toString(),
             "recurring_expenses" to (snapshot.optJSONArray("recurringExpenses") ?: JSONArray()).toString(),
+            "projects" to (snapshot.optJSONArray("projects") ?: JSONArray()).toString(),
             "business_profile" to businessProfileJson(importedProfile).toString()
         ))) { "Die wiederhergestellten Daten konnten nicht dauerhaft gespeichert werden." }
     }
@@ -316,7 +336,8 @@ class LocalData(context: Context) {
             val line = array.getJSONObject(index)
             InvoiceLine(line.optString("description"), line.optLong("amountCents"))
         } }.orEmpty(),
-        paidCents = it.optLong("paidCents", 0L)
+        paidCents = it.optLong("paidCents", 0L),
+        projectId = it.optString("projectId").takeIf(String::isNotBlank)
     )
 
     private fun offerFromJson(it: JSONObject) = Offer(
@@ -335,8 +356,20 @@ class LocalData(context: Context) {
         id = it.optString("id", UUID.randomUUID().toString()), merchant = it.optString("merchant", ""),
         category = it.optString("category", "Sonstiges"), amountCents = it.optLong("amountCents", 0),
         date = it.optString("date"), note = it.optString("note"), receiptUri = it.optString("receiptUri").takeIf(String::isNotBlank),
-        inputVatCents = it.takeUnless { json -> json.isNull("inputVatCents") }?.optLong("inputVatCents")
+        inputVatCents = it.takeUnless { json -> json.isNull("inputVatCents") }?.optLong("inputVatCents"),
+        projectId = it.optString("projectId").takeIf(String::isNotBlank)
     )
+
+    private fun projectFromJson(it: JSONObject) = Project(
+        id = it.optString("id", UUID.randomUUID().toString()), name = it.optString("name"),
+        description = it.optString("description"),
+        customerId = it.optString("customerId").takeIf(String::isNotBlank),
+        active = it.optBoolean("active", true)
+    )
+
+    private fun projectToJson(project: Project) = JSONObject()
+        .put("id", project.id).put("name", project.name).put("description", project.description)
+        .put("customerId", project.customerId).put("active", project.active)
 
     private fun bankTransactionFromJson(it: JSONObject) = BankTransaction(
         id = it.optString("id"), accountIban = it.optString("accountIban"), date = it.optString("date"),
@@ -436,6 +469,7 @@ class LocalData(context: Context) {
         .put("id", expense.id).put("merchant", expense.merchant).put("category", expense.category)
         .put("amountCents", expense.amountCents).put("date", expense.date).put("note", expense.note)
         .put("receiptUri", expense.receiptUri).put("inputVatCents", expense.inputVatCents ?: JSONObject.NULL)
+        .put("projectId", expense.projectId)
 
     private fun invoiceToJson(invoice: Invoice) = JSONObject()
         .put("id", invoice.id).put("number", invoice.number).put("customer", invoice.customer)
@@ -445,6 +479,7 @@ class LocalData(context: Context) {
         .put("serviceDate", invoice.serviceDate).put("dueDate", invoice.dueDate)
         .put("status", invoice.status).put("paidCents", invoice.paidCents)
         .put("vatRatePercent", invoice.vatRatePercent ?: JSONObject.NULL)
+        .put("projectId", invoice.projectId)
         .put("lines", JSONArray().apply { invoice.lines.forEach { put(JSONObject().put("description", it.description).put("amountCents", it.amountCents)) } })
 
     private fun taxDeadlineFromJson(it: JSONObject) = TaxDeadline(
@@ -458,6 +493,7 @@ class LocalData(context: Context) {
     fun offers(): List<Offer> = read("offers", ::offerFromJson)
 
     fun expenses(): List<Expense> = read("expenses", ::expenseFromJson)
+    fun projects(): List<Project> = read("projects", ::projectFromJson)
     fun expensePayments(): List<ExpensePayment> = read("expense_payments", ::expensePaymentFromJson)
     fun bankTransactions(): List<BankTransaction> = read("bank_transactions", ::bankTransactionFromJson)
     fun bankAccounts(): List<BankAccountSummary> = read("bank_accounts", ::bankAccountFromJson)
@@ -467,6 +503,7 @@ class LocalData(context: Context) {
     fun saveInvoicePayments(values: List<InvoicePayment>) = write("invoice_payments", values.map(::invoicePaymentToJson))
     fun saveOffers(values: List<Offer>) = write("offers", values.map { JSONObject().put("id", it.id).put("number", it.number).put("customer", it.customer).put("customerId", it.customerId).put("customerAddress", it.customerAddress).put("customerEmail", it.customerEmail).put("description", it.description).put("amountCents", it.amountCents).put("date", it.date).put("validUntil", it.validUntil).put("status", it.status).put("convertedInvoiceId", it.convertedInvoiceId).put("lines", JSONArray().apply { it.lines.forEach { line -> put(JSONObject().put("description", line.description).put("amountCents", line.amountCents)) } }) })
     fun saveExpenses(values: List<Expense>) = write("expenses", values.map(::expenseToJson))
+    fun saveProjects(values: List<Project>) = write("projects", values.map(::projectToJson))
     fun saveExpensePayments(values: List<ExpensePayment>) = write("expense_payments", values.map(::expensePaymentToJson))
     fun saveBankTransactions(values: List<BankTransaction>) = write("bank_transactions", values.map(::bankTransactionToJson))
     fun saveBankAccounts(values: List<BankAccountSummary>) = write("bank_accounts", values.map(::bankAccountToJson))

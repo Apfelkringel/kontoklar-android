@@ -125,6 +125,7 @@ private fun KontoKlarApp() {
     var customers by remember { mutableStateOf(store.customers()) }
     var offers by remember { mutableStateOf(store.offers()) }
     var products by remember { mutableStateOf(store.products()) }
+    var projects by remember { mutableStateOf(store.projects()) }
     var taxDeadlines by remember { mutableStateOf(store.taxDeadlines()) }
     var recurringPlans by remember { mutableStateOf(store.recurringInvoicePlans()) }
     var recurringExpensePlans by remember { mutableStateOf(store.recurringExpensePlans()) }
@@ -148,6 +149,7 @@ private fun KontoKlarApp() {
     var toast by remember { mutableStateOf<String?>(null) }
     var customersOpen by remember { mutableStateOf(false) }
     var productsOpen by remember { mutableStateOf(false) }
+    var projectsOpen by remember { mutableStateOf(false) }
     var recurringInvoicesOpen by remember { mutableStateOf(false) }
     var recurringExpensesOpen by remember { mutableStateOf(false) }
     var productEditorOpen by remember { mutableStateOf(false) }
@@ -452,6 +454,7 @@ private fun KontoKlarApp() {
                     else if (action == "Kunden") customersOpen = true
                     else if (action == "Angebote") offersOpen = true
                     else if (action == "Produkte & Dienstleistungen") productsOpen = true
+                    else if (action == "Projekte") projectsOpen = true
                     else if (action == "Wiederkehrende Rechnungen") recurringInvoicesOpen = true
                     else if (action == "Wiederkehrende Ausgaben") recurringExpensesOpen = true
                     else if (action == "Dokumente") documentsOpen = true
@@ -650,6 +653,7 @@ private fun KontoKlarApp() {
             profile = profile,
             customers = customers,
             products = products,
+            projects = projects,
             onSaveProfile = { updated -> profile = updated; store.saveBusinessProfile(updated); toast = "Unternehmensprofil gespeichert"; dialog = null }
         )
         if (customersOpen) CustomerManagerDialog(
@@ -665,6 +669,13 @@ private fun KontoKlarApp() {
             onAdd = { editingProduct = Product(name = "", unitPriceCents = 0); productEditorOpen = true },
             onEdit = { editingProduct = it; productEditorOpen = true },
             onDelete = { productToDelete = it }
+        )
+        if (projectsOpen) ProjectManagerDialog(
+            projects = projects,
+            customers = customers,
+            onDismiss = { projectsOpen = false },
+            onSave = { saved -> projects = projects.upsertProject(saved); store.saveProjects(projects); toast = "Projekt gespeichert" },
+            onDelete = { project -> projects = projects.withoutProject(project.id); store.saveProjects(projects); toast = "Projekt gelöscht" }
         )
         if (productEditorOpen) ProductEditorDialog(
             product = editingProduct,
@@ -1538,6 +1549,7 @@ private fun MoreScreen(profile: BusinessProfile, onAction: (String) -> Unit) {
         Triple("Kunden", Icons.Default.People, "Kunden"),
         Triple("Angebote", Icons.Default.RequestQuote, "Angebote"),
         Triple("Produkte & Dienstleistungen", Icons.Default.Inventory2, "Produkte & Dienstleistungen"),
+        Triple("Projekte", Icons.Default.Folder, "Projekte"),
         Triple("Wiederkehrende Rechnungen", Icons.Default.Repeat, "Wiederkehrende Rechnungen"),
         Triple("Wiederkehrende Ausgaben", Icons.Default.Repeat, "Wiederkehrende Ausgaben"),
         Triple(labelDocuments, Icons.Default.Folder, "Dokumente"),
@@ -2092,12 +2104,15 @@ private fun ActionDialog(
     profile: BusinessProfile,
     customers: List<Customer>,
     products: List<Product>,
+    projects: List<Project>,
     onSaveProfile: (BusinessProfile) -> Unit
 ) {
     var customer by remember(title, existingInvoice?.id) { mutableStateOf(existingInvoice?.customer.orEmpty()) }
     var selectedCustomer by remember(title, existingInvoice?.id) { mutableStateOf(customers.firstOrNull { it.id == existingInvoice?.customerId }) }
     var customerMenuExpanded by remember { mutableStateOf(false) }
     var productMenuExpanded by remember { mutableStateOf(false) }
+    var projectMenuExpanded by remember { mutableStateOf(false) }
+    var selectedProjectId by remember(title, existingInvoice?.id, existingExpense?.id) { mutableStateOf(existingInvoice?.projectId ?: existingExpense?.projectId) }
     val invoiceLineInputs = remember(title, existingInvoice?.id) {
         mutableStateListOf<InvoiceLineInput>().apply {
             addAll(existingInvoice?.let(::invoiceLines)?.map { InvoiceLineInput(it.description, formatEuro(it.amountCents)) }
@@ -2192,6 +2207,17 @@ private fun ActionDialog(
                     }
                     Text("Der USt.-Satz wird für den eingeschränkten XRechnung-Export verwendet. Steuerfreie Sonderfälle sind nicht unterstützt.", color = Muted, fontSize = 11.sp)
                 } else if (isInvoice) {
+                    if (projects.any { it.active }) {
+                        Box {
+                            OutlinedButton(onClick = { projectMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.Folder, null); Spacer(Modifier.width(8.dp)); Text(projects.firstOrNull { it.id == selectedProjectId }?.name ?: "Kein Projekt", modifier = Modifier.weight(1f)); Icon(Icons.Default.ArrowDropDown, null)
+                            }
+                            DropdownMenu(expanded = projectMenuExpanded, onDismissRequest = { projectMenuExpanded = false }) {
+                                DropdownMenuItem(text = { Text("Kein Projekt") }, onClick = { selectedProjectId = null; projectMenuExpanded = false })
+                                projects.filter { it.active }.forEach { project -> DropdownMenuItem(text = { Text(project.name) }, onClick = { selectedProjectId = project.id; projectMenuExpanded = false }) }
+                            }
+                        }
+                    }
                     Box {
                         OutlinedTextField(
                             value = customer,
@@ -2267,6 +2293,17 @@ private fun ActionDialog(
                     Text("Bitte das tatsächliche Leistungsdatum angeben. Die erzeugte XML-Rechnung muss vor Versand fachlich und mit einem Validator geprüft werden.", color = Muted, fontSize = 11.sp)
                     Text("Zahlungsziel: ${profile.paymentTermsDays} Tage · Nummernpräfix: ${profile.invoicePrefix}", color = Muted, fontSize = 11.sp)
                 } else if (isExpense) {
+                    if (projects.any { it.active }) {
+                        Box {
+                            OutlinedButton(onClick = { projectMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.Folder, null); Spacer(Modifier.width(8.dp)); Text(projects.firstOrNull { it.id == selectedProjectId }?.name ?: "Kein Projekt", modifier = Modifier.weight(1f)); Icon(Icons.Default.ArrowDropDown, null)
+                            }
+                            DropdownMenu(expanded = projectMenuExpanded, onDismissRequest = { projectMenuExpanded = false }) {
+                                DropdownMenuItem(text = { Text("Kein Projekt") }, onClick = { selectedProjectId = null; projectMenuExpanded = false })
+                                projects.filter { it.active }.forEach { project -> DropdownMenuItem(text = { Text(project.name) }, onClick = { selectedProjectId = project.id; projectMenuExpanded = false }) }
+                            }
+                        }
+                    }
                     OutlinedTextField(merchant, { merchant = it; error = null }, label = { Text("Händler / Lieferant") }, singleLine = true)
                     OutlinedTextField(amount, { amount = it; error = null }, label = { Text("Betrag (€)") }, singleLine = true)
                     OutlinedTextField(inputVat, { inputVat = it; error = null }, label = { Text("Enthaltene Vorsteuer laut Beleg (€), optional") }, singleLine = true)
@@ -2338,11 +2375,12 @@ private fun ActionDialog(
                             serviceDate = serviceDate,
                             dueDate = invoiceDueDate,
                             vatRatePercent = existingInvoice?.vatRatePercent ?: profile.vatRatePercent
+                            ,projectId = selectedProjectId
                         )
                     )
                     isExpense -> {
-                        val draft = existingExpense?.copy(merchant = merchant.trim(), category = category, amountCents = expenseTotalCents, date = expenseDate, note = note.trim(), receiptUri = receiptUri, inputVatCents = parsedInputVat)
-                            ?: Expense(merchant = merchant.trim(), category = category, amountCents = expenseTotalCents, date = expenseDate, note = note.trim(), receiptUri = receiptUri, inputVatCents = parsedInputVat)
+                        val draft = existingExpense?.copy(merchant = merchant.trim(), category = category, amountCents = expenseTotalCents, date = expenseDate, note = note.trim(), receiptUri = receiptUri, inputVatCents = parsedInputVat, projectId = selectedProjectId)
+                            ?: Expense(merchant = merchant.trim(), category = category, amountCents = expenseTotalCents, date = expenseDate, note = note.trim(), receiptUri = receiptUri, inputVatCents = parsedInputVat, projectId = selectedProjectId)
                         val source = receiptUri?.let { Uri.parse(it) }
                         isSavingExpense = true
                         saveScope.launch {

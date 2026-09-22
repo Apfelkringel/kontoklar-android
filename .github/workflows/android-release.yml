@@ -39,7 +39,7 @@ jobs:
           KONTOKLAR_BANKING_API_BASE_URL: ${{ vars.KONTOKLAR_BANKING_API_BASE_URL }}
         run: ./gradlew testDebugUnitTest assembleDebugAndroidTest assembleRelease
       - name: Store signed APK as workflow artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: KontoKlar-${{ github.ref_name }}-signed-apk
           path: app/build/outputs/apk/release/app-release.apk

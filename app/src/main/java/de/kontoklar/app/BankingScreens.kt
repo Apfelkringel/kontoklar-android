@@ -249,6 +249,22 @@ fun BankingScreen(
                         Text("Die offizielle Registrierung öffnet sich im Browser. Client-Secret, PIN und TAN bleiben bei dir und werden nicht in KontoKlar eingegeben.", color = Muted, fontSize = 10.sp)
                     } else {
                         Text("Freigabe und Datenabruf laufen über finAPI. PIN und TAN gibst du ausschließlich im Bank-/finAPI-Dialog ein. Umsätze werden vom Anbieter abgerufen und danach in KontoKlar lokal gespeichert.", color = Muted, fontSize = 11.sp)
+                        Text("Schnell verbinden", color = Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        listOf(
+                            "C24" to listOf("c24"),
+                            "comdirect" to listOf("comdirect"),
+                            "Trade Republic" to listOf("trade republic", "traderepublic")
+                        ).forEach { (label, needles) ->
+                            val matches = institutions.filter { institution -> needles.any { needle -> institution.name.lowercase().contains(needle) } }
+                            OutlinedButton(
+                                onClick = { onConnectBank(matches.firstOrNull(), requestedAccountTypes) },
+                                enabled = !bankingBusy,
+                                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(if (matches.isEmpty()) "$label · Banksuche öffnen" else "$label verbinden")
+                            }
+                            if (matches.isEmpty() && institutions.isNotEmpty()) Text("Kein eindeutiger ${label}-Treffer im aktuellen Anbieterprofil; die Banksuche bleibt verfügbar.", color = Muted, fontSize = 10.sp)
+                        }
                         Button(
                             onClick = { onConnectBank(null, requestedAccountTypes) }, enabled = !bankingBusy,
                             modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),

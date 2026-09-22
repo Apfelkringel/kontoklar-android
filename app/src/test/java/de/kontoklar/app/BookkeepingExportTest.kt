@@ -58,4 +58,10 @@ class BookkeepingExportTest {
         assertEquals("120,00", row[6])
         assertEquals("Nicht abgerechnet", row[7])
     }
+
+    @Test fun csvKeepsNegativeAmountsNumericButEscapesFormulaLikeValues() {
+        assertEquals("\"-87,42\"", csvField("-87,42"))
+        assertEquals("\"'-1+2\"", csvField("-1+2"))
+        assertEquals("\"'=SUM(A1:A2)\"", csvField("=SUM(A1:A2)"))
+    }
 }

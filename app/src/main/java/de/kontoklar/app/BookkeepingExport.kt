@@ -115,7 +115,13 @@ internal fun timeEntryCsvFields(entry: TimeEntry, project: Project): List<String
 }
 
 internal fun csvField(value: String): String {
-    val safe = if (value.trimStart().firstOrNull() in setOf('=', '+', '-', '@')) "'$value" else value
+    val trimmed = value.trimStart()
+    val startsLikeFormula = when (trimmed.firstOrNull()) {
+        '=', '+', '@' -> true
+        '-' -> !trimmed.matches(Regex("-\\d+(?:[,.]\\d+)?"))
+        else -> false
+    }
+    val safe = if (startsLikeFormula) "'$value" else value
     return "\"${safe.replace("\"", "\"\"")}\""
 }
 

@@ -2,6 +2,14 @@
 
 Native Android app prototype built with Kotlin and Jetpack Compose. The app uses a distinct name and package from Accountable; it is an independent implementation, not a copy of Accountable's private source code or backend.
 
+## Architecture at a glance
+
+- `app/src/main/java/de/kontoklar/app/` — Android app (Kotlin/Jetpack Compose). `MainActivity.kt` is the UI shell and navigation; `LocalData.kt` holds the data models and JSON persistence; the remaining files cover one area each (invoices, expenses, banking, tax, reminders, PDF/XRechnung, statement imports).
+- `app/src/test/` — unit tests for the core money, payment, tax, import, and crypto logic; `app/src/androidTest/` — instrumented tests (including Trade Republic PDF extraction).
+- `banking-api/` — Cloudflare Worker that adapts finAPI for live Open Banking (`src/index.ts`, tests in `test/worker.test.ts`, D1 migrations in `migrations/`). It is optional: without a deployed worker, the app works fully offline with local statement imports.
+- `.github/workflows/ci.yml` — unit tests, debug build, and emulator tests plus worker checks; `android-release.yml` — signed APK release on a `v*` tag.
+- `docs/open-banking.md` — the live-banking contract and production gates (including provider costs); `docs/android-releases.md` — signing and release handling. See also `SECURITY.md` for vulnerability reporting.
+
 ## Implemented
 
 - Dashboard with totals derived from locally saved invoices and expenses.
@@ -78,6 +86,20 @@ Requires JDK 17+ and Android SDK Platform 35 / Build Tools 34.0.0. The workspace
 
 ```sh
 ./gradlew testDebugUnitTest assembleDebug
+```
+
+Banking worker checks (no real bank is contacted):
+
+```sh
+cd banking-api
+npm ci
+npm run check
+```
+
+Instrumented tests need a connected device or emulator:
+
+```sh
+./gradlew connectedDebugAndroidTest
 ```
 
 The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
